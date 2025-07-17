@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 POSTGRES_TEST_URL = os.getenv("SQLALCHEMY_TEST_DATABASE_URI")
+if POSTGRES_TEST_URL is None:
+    raise RuntimeError("SQLALCHEMY_TEST_DATABASE_URI environment variable must be set for tests.")
 
 
 @pytest.fixture(name="session")
@@ -26,7 +28,7 @@ def session_fixture():
     SQLModel.metadata.drop_all(engine)
 
 def test_create_user(session):
-    user = User(email="test@example.com", name="Test User")
+    user = User(email="test@example.com", name="Test User", username="testuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
@@ -34,7 +36,7 @@ def test_create_user(session):
     assert user.updated_at is not None
 
 def test_create_meal_with_ingredients(session):
-    user = User(email="mealuser@example.com", name="Meal User")
+    user = User(email="mealuser@example.com", name="Meal User", username="mealuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
@@ -49,7 +51,7 @@ def test_create_meal_with_ingredients(session):
     assert meal.ingredients[0].name == "Chicken"
 
 def test_create_glucose_reading(session):
-    user = User(email="glucose@example.com", name="Glucose User")
+    user = User(email="glucose@example.com", name="Glucose User", username="glucoseuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
@@ -60,7 +62,7 @@ def test_create_glucose_reading(session):
     assert reading.value == 120.5
 
 def test_create_insulin_dose(session):
-    user = User(email="insulin@example.com", name="Insulin User")
+    user = User(email="insulin@example.com", name="Insulin User", username="insulinuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
@@ -71,7 +73,7 @@ def test_create_insulin_dose(session):
     assert dose.units == 5.0
 
 def test_create_activity(session):
-    user = User(email="activity@example.com", name="Activity User")
+    user = User(email="activity@example.com", name="Activity User", username="activityuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
@@ -82,7 +84,7 @@ def test_create_activity(session):
     assert activity.type == "Running"
 
 def test_create_condition_log(session):
-    user = User(email="condition@example.com", name="Condition User")
+    user = User(email="condition@example.com", name="Condition User", username="conditionuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None

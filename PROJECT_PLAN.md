@@ -14,7 +14,7 @@
 - [x] Configure PostgreSQL database and environment variables.
 - [x] Design and implement SQLModel models for User, GlucoseReading, Meal, MealIngredient, InsulinDose, Activity, ConditionLog, Goal.
 - [x] Set up Alembic for database migrations.
-- [ ] Implement authentication and user management (registration, login, JWT, password hashing, username/password support).
+- [x] Implement authentication and user management (registration, login, JWT, password hashing, username/password support).
 - [ ] Implement CRUD endpoints for Meals, Activities, ConditionLogs, InsulinDoses, GlucoseReadings.
 - [ ] Implement endpoint for CSV upload and parsing for CGM data.
 - [ ] Implement analytics endpoints (summaries, trends, recommendations).
