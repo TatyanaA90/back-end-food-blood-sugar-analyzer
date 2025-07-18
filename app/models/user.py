@@ -8,6 +8,7 @@ class User(Base, table=True):
     name: str
     username: str = Field(index=True, unique=True, nullable=False)
     hashed_password: str
+    is_admin: bool = Field(default=False)
 
     glucose_readings: List["GlucoseReading"] = Relationship(back_populates="user")
     meals: List["Meal"] = Relationship(back_populates="user")

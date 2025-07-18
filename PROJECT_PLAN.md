@@ -15,7 +15,8 @@
 - [x] Design and implement SQLModel models for User, GlucoseReading, Meal, MealIngredient, InsulinDose, Activity, ConditionLog, Goal.
 - [x] Set up Alembic for database migrations.
 - [x] Implement authentication and user management (registration, login, JWT, password hashing, username/password support).
-- [ ] Implement CRUD endpoints for Meals, Activities, ConditionLogs, InsulinDoses, GlucoseReadings.
+- [x] Implement CRUD endpoints for Meals, including business logic (auto-calculate totals, permissions, cascade delete ingredients, admin/user access control, response models for list/detail).
+- [ ] Implement CRUD endpoints for Activities, ConditionLogs, InsulinDoses, GlucoseReadings.
 - [ ] Implement endpoint for CSV upload and parsing for CGM data.
 - [ ] Implement analytics endpoints (summaries, trends, recommendations).
 - [ ] Implement endpoints for visualization data (charts, timelines, metrics).
