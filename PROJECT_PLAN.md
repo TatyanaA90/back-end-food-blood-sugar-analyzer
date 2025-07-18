@@ -16,7 +16,8 @@
 - [x] Set up Alembic for database migrations.
 - [x] Implement authentication and user management (registration, login, JWT, password hashing, username/password support).
 - [x] Implement CRUD endpoints for Meals, including business logic (auto-calculate totals, permissions, cascade delete ingredients, admin/user access control, response models for list/detail).
-- [ ] Implement CRUD endpoints for Activities, ConditionLogs, InsulinDoses, GlucoseReadings.
+- [x] Implement CRUD endpoints for Activities, including MET-based calories burned auto-calculation, weight tracking (kg/lb), permissions, and response models.
+- [ ] Implement CRUD endpoints for ConditionLogs, InsulinDoses, GlucoseReadings.
 - [ ] Implement endpoint for CSV upload and parsing for CGM data.
 - [ ] Implement analytics endpoints (summaries, trends, recommendations).
 - [ ] Implement endpoints for visualization data (charts, timelines, metrics).

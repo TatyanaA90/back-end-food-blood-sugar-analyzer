@@ -330,6 +330,34 @@ class MealIngredient(Base, table=True):
 
 ---
 
+## 🏃‍♂️ Activities & Weight Tracking: Model, Business Logic, and API
+
+### Model Changes (June 2024)
+
+- **User Model**: Now includes:
+  - `weight: Optional[float]` (always stored in kg for calculations)
+  - `weight_unit: str` (user's preferred unit: "kg" or "lb")
+- **Activity Model**: Now includes:
+  - `calories_burned: Optional[float]` (auto-calculated using MET formula)
+  - All required fields: `type`, `intensity`, `duration_min`, `timestamp`, `note`
+
+### MET-Based Calories Calculation
+
+- **MET (Metabolic Equivalent of Task)** values are used to estimate calories burned
+- Formula: `Calories = MET × weight (kg) × duration (hours)`
+- MET lookup table includes common activities (walking, running, cycling) with different intensity levels
+- User's weight is always stored in kg internally, regardless of their preferred unit
+- Default weight of 70kg used if user weight not set
+
+### CRUD Endpoints & Business Logic
+
+- **Create/Update Activity**: User provides activity details, backend automatically calculates calories burned using MET formula
+- **Permissions**: Only the creator or admin can edit/delete; admin can see/edit all activities
+- **Response Models**: List view returns basic info; detail view returns all fields. Sensitive fields hidden
+- **Auto-calculation**: Calories are recalculated on both create and update operations
+
+---
+
 ## 🚪 **4. API Routes (`app/routers/`)**
 
 These are like different rooms in our house, each handling specific tasks:

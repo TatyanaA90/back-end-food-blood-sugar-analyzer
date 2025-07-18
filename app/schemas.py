@@ -44,3 +44,26 @@ class MealReadBasic(MealBase):
 
 class MealReadDetail(MealReadBasic):
     ingredients: List[MealIngredientRead]
+
+# Activity Schemas
+class ActivityBase(BaseModel):
+    type: str
+    intensity: Optional[str] = None
+    duration_min: Optional[int] = None
+    timestamp: Optional[datetime] = None
+    note: Optional[str] = None
+
+class ActivityCreate(ActivityBase):
+    pass
+
+class ActivityUpdate(ActivityBase):
+    pass
+
+class ActivityReadBasic(ActivityBase):
+    id: int
+    calories_burned: Optional[float] = None
+    class Config:
+        orm_mode = True
+
+class ActivityReadDetail(ActivityReadBasic):
+    pass

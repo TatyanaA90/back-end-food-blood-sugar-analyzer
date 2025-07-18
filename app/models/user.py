@@ -1,4 +1,4 @@
-from typing import List, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 from sqlmodel import Field, Relationship
 from app.models.base import Base
 
@@ -9,6 +9,8 @@ class User(Base, table=True):
     username: str = Field(index=True, unique=True, nullable=False)
     hashed_password: str
     is_admin: bool = Field(default=False)
+    weight: Optional[float] = None  # Always stored in kg for calculations
+    weight_unit: str = Field(default="kg")  # User's preferred unit: "kg" or "lb"
 
     glucose_readings: List["GlucoseReading"] = Relationship(back_populates="user")
     meals: List["Meal"] = Relationship(back_populates="user")
