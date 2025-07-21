@@ -67,3 +67,24 @@ class ActivityReadBasic(ActivityBase):
 
 class ActivityReadDetail(ActivityReadBasic):
     pass
+
+# ConditionLog Schemas
+class ConditionLogBase(BaseModel):
+    type: str
+    value: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    note: Optional[str] = None
+
+class ConditionLogCreate(ConditionLogBase):
+    pass
+
+class ConditionLogUpdate(ConditionLogBase):
+    pass
+
+class ConditionLogReadBasic(ConditionLogBase):
+    id: int
+    class Config:
+        orm_mode = True
+
+class ConditionLogReadDetail(ConditionLogReadBasic):
+    pass
