@@ -88,3 +88,44 @@ class ConditionLogReadBasic(ConditionLogBase):
 
 class ConditionLogReadDetail(ConditionLogReadBasic):
     pass
+
+# InsulinDose Schemas
+class InsulinDoseBase(BaseModel):
+    units: float
+    timestamp: Optional[datetime] = None
+    note: Optional[str] = None
+
+class InsulinDoseCreate(InsulinDoseBase):
+    pass
+
+class InsulinDoseUpdate(InsulinDoseBase):
+    pass
+
+class InsulinDoseReadBasic(InsulinDoseBase):
+    id: int
+    class Config:
+        orm_mode = True
+
+class InsulinDoseReadDetail(InsulinDoseReadBasic):
+    pass
+
+# GlucoseReading Schemas
+class GlucoseReadingBase(BaseModel):
+    value: float
+    unit: str = "mg/dl"  # "mg/dl" or "mmol/l"
+    timestamp: Optional[datetime] = None
+    note: Optional[str] = None
+
+class GlucoseReadingCreate(GlucoseReadingBase):
+    pass
+
+class GlucoseReadingUpdate(GlucoseReadingBase):
+    pass
+
+class GlucoseReadingReadBasic(GlucoseReadingBase):
+    id: int
+    class Config:
+        orm_mode = True
+
+class GlucoseReadingReadDetail(GlucoseReadingReadBasic):
+    pass
