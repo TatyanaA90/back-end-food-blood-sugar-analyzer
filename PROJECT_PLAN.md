@@ -19,7 +19,7 @@
 - [x] Implement CRUD endpoints for Activities, including MET-based calories burned auto-calculation, weight tracking (kg/lb), permissions, and response models.
 - [x] Implement CRUD endpoints for ConditionLogs, including standard business logic, permissions, and response models.
 - [x] Implement CRUD endpoints for InsulinDoses, GlucoseReadings, including units for InsulinDose and value/unit for GlucoseReading.
-- [ ] Implement endpoint for CSV upload and parsing for CGM data.
+- [x] Implement endpoint for CSV upload and parsing for CGM data, including semicolon-delimited files and mapping DAY/TIME/UDT_CGMS columns.
 - [ ] Implement analytics endpoints (summaries, trends, recommendations).
 - [ ] Implement endpoints for visualization data (charts, timelines, metrics).
 - [ ] Write tests for all endpoints.
