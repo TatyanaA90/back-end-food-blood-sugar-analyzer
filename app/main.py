@@ -7,6 +7,7 @@ from app.routers.insulin_dose_router import router as insulin_dose_router
 from app.routers.glucose_reading_router import router as glucose_reading_router
 from app.routers.logs_router import router as logs_router
 from app.routers.dexcom_upload_router import router as dexcom_upload_router
+from app.routers.analytics_router import router as analytics_router
 
 app = FastAPI()
 
@@ -17,6 +18,7 @@ app.include_router(insulin_dose_router)
 app.include_router(glucose_reading_router)
 app.include_router(logs_router)
 app.include_router(dexcom_upload_router)
+app.include_router(analytics_router)
 
 @app.get("/")
 def read_root():

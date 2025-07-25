@@ -20,7 +20,7 @@
 - [x] Implement CRUD endpoints for ConditionLogs, including standard business logic, permissions, and response models.
 - [x] Implement CRUD endpoints for InsulinDoses, GlucoseReadings, including units for InsulinDose and value/unit for GlucoseReading.
 - [x] Implement endpoint for CSV upload and parsing for CGM data, including semicolon-delimited files and mapping DAY/TIME/UDT_CGMS columns.
-- [ ] Implement analytics endpoints (summaries, trends, recommendations).
+- [~] Implement analytics endpoints (glucose summary implemented; trends, recommendations, etc. pending).
 - [ ] Implement endpoints for visualization data (charts, timelines, metrics).
 - [ ] Write tests for all endpoints.
 - [ ] Document API with OpenAPI/Swagger (FastAPI auto-docs).
