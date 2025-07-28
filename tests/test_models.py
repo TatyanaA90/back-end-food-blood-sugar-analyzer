@@ -40,33 +40,36 @@ def test_create_meal_with_ingredients(session):
     session.add(user)
     session.commit()
     assert user.id is not None
-    meal = Meal(user_id=user.id, timestamp=datetime.now(timezone.utc), description="Lunch", carbs=45.0)
+    meal = Meal(user_id=user.id, timestamp=datetime.now(timezone.utc), description="Lunch", total_carbs=45.0)
     session.add(meal)
     session.commit()
     assert meal.id is not None
-    ingredient = MealIngredient(meal_id=meal.id, name="Chicken", quantity="100g")
+    ingredient = MealIngredient(meal_id=meal.id, name="Chicken", weight=100.0, carbs=25.0)
     meal.ingredients.append(ingredient)
     session.add(ingredient)
     session.commit()
     assert meal.ingredients[0].name == "Chicken"
+    assert meal.ingredients[0].weight == 100.0
+    assert meal.ingredients[0].carbs == 25.0
 
 def test_create_glucose_reading(session):
     user = User(email="glucose@example.com", name="Glucose User", username="glucoseuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
-    reading = GlucoseReading(user_id=user.id, timestamp=datetime.now(timezone.utc), value=120.5, source="CGM")
+    reading = GlucoseReading(user_id=user.id, timestamp=datetime.now(timezone.utc), value=120.5, unit="mg/dl")
     session.add(reading)
     session.commit()
     assert reading.id is not None
     assert reading.value == 120.5
+    assert reading.unit == "mg/dl"
 
 def test_create_insulin_dose(session):
     user = User(email="insulin@example.com", name="Insulin User", username="insulinuser", hashed_password="fakehashed")
     session.add(user)
     session.commit()
     assert user.id is not None
-    dose = InsulinDose(user_id=user.id, timestamp=datetime.now(timezone.utc), units=5.0, type="Rapid")
+    dose = InsulinDose(user_id=user.id, timestamp=datetime.now(timezone.utc), units=5.0)
     session.add(dose)
     session.commit()
     assert dose.id is not None

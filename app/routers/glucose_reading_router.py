@@ -8,7 +8,7 @@ from app.schemas import (
 )
 from app.core.security import get_current_user
 from typing import List
-from datetime import datetime
+from datetime import datetime, UTC
 
 router = APIRouter(prefix="/glucose-readings", tags=["glucose-readings"])
 
@@ -25,14 +25,14 @@ def create_glucose_reading(reading_in: GlucoseReadingCreate, session: Session = 
         user_id=int(current_user.id),
         value=reading_in.value,
         unit=reading_in.unit,  # User can choose "mg/dl" or "mmol/l"
-        timestamp=reading_in.timestamp or datetime.utcnow(),
+        timestamp=reading_in.timestamp or datetime.now(UTC),
         note=reading_in.note
     )
     # Add and save the new reading to the database
     session.add(reading)
     session.commit()
     session.refresh(reading)  # Get the latest data (including the new ID)
-    return GlucoseReadingReadDetail.from_orm(reading)
+    return GlucoseReadingReadDetail.model_validate(reading)
 
 # List all glucose readings for the current user (or all if admin)
 @router.get("/", response_model=List[GlucoseReadingReadBasic])
@@ -43,7 +43,7 @@ def list_glucose_readings(session: Session = Depends(get_session), current_user:
     else:
         readings = session.exec(select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)).all()
     # Return a list of reading summaries
-    return [GlucoseReadingReadBasic.from_orm(r) for r in readings]
+    return [GlucoseReadingReadBasic.model_validate(r) for r in readings]
 
 # Get a single glucose reading by ID
 @router.get("/{reading_id}", response_model=GlucoseReadingReadDetail)
@@ -55,7 +55,7 @@ def get_glucose_reading(reading_id: int, session: Session = Depends(get_session)
     # Only the owner or admin can view
     if not can_edit_glucose_reading(reading, current_user) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    return GlucoseReadingReadDetail.from_orm(reading)
+    return GlucoseReadingReadDetail.model_validate(reading)
 
 # Update an existing glucose reading
 @router.put("/{reading_id}", response_model=GlucoseReadingReadDetail)
@@ -68,11 +68,11 @@ def update_glucose_reading(reading_id: int, reading_in: GlucoseReadingUpdate, se
     if not can_edit_glucose_reading(reading, current_user):
         raise HTTPException(status_code=403, detail="Not authorized")
     # Update fields with new values
-    for field, value in reading_in.dict(exclude_unset=True).items():
+    for field, value in reading_in.model_dump(exclude_unset=True).items():
         setattr(reading, field, value)
     session.commit()
     session.refresh(reading)
-    return GlucoseReadingReadDetail.from_orm(reading)
+    return GlucoseReadingReadDetail.model_validate(reading)
 
 # Delete a glucose reading
 @router.delete("/{reading_id}", status_code=status.HTTP_204_NO_CONTENT)

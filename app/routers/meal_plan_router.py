@@ -57,7 +57,7 @@ def create_meal(meal_in: MealCreate, session: Session = Depends(get_session), cu
     session.refresh(meal)
     # Reload with ingredients
     meal = session.exec(select(Meal).where(Meal.id == meal.id)).first()
-    return MealReadDetail.from_orm(meal)
+    return MealReadDetail.model_validate(meal)
 
 @router.get("/", response_model=List[MealReadBasic])
 def list_meals(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -65,7 +65,7 @@ def list_meals(session: Session = Depends(get_session), current_user: User = Dep
         meals = session.exec(select(Meal)).all()
     else:
         meals = session.exec(select(Meal).where(Meal.user_id == current_user.id)).all()
-    return [MealReadBasic.from_orm(m) for m in meals]
+    return [MealReadBasic.model_validate(m) for m in meals]
 
 @router.get("/{meal_id}", response_model=MealReadDetail)
 def get_meal(meal_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -74,7 +74,7 @@ def get_meal(meal_id: int, session: Session = Depends(get_session), current_user
         raise HTTPException(status_code=404, detail="Meal not found")
     if not can_edit_meal(meal, current_user) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    return MealReadDetail.from_orm(meal)
+    return MealReadDetail.model_validate(meal)
 
 @router.put("/{meal_id}", response_model=MealReadDetail)
 def update_meal(meal_id: int, meal_in: MealUpdate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -84,7 +84,7 @@ def update_meal(meal_id: int, meal_in: MealUpdate, session: Session = Depends(ge
     if not can_edit_meal(meal, current_user):
         raise HTTPException(status_code=403, detail="Not authorized")
     # Update fields
-    for field, value in meal_in.dict(exclude_unset=True).items():
+    for field, value in meal_in.model_dump(exclude_unset=True).items():
         if field != "ingredients":
             setattr(meal, field, value)
     # Update ingredients if provided
@@ -111,7 +111,7 @@ def update_meal(meal_id: int, meal_in: MealUpdate, session: Session = Depends(ge
         meal.total_weight = total_weight
     session.commit()
     session.refresh(meal)
-    return MealReadDetail.from_orm(meal)
+    return MealReadDetail.model_validate(meal)
 
 @router.delete("/{meal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_meal(meal_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):

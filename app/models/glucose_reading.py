@@ -8,7 +8,8 @@ class GlucoseReading(Base, table=True):
     user_id: int = Field(foreign_key="users.id")
     timestamp: Optional[datetime] = None
     value: float
-    source: Optional[str] = None
+    unit: str = Field(default="mg/dl")  # "mg/dl" or "mmol/l"
+    note: Optional[str] = None
 
     user: "User" = Relationship(back_populates="glucose_readings")
 

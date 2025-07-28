@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # MealIngredient Schemas
 class MealIngredientBase(BaseModel):
@@ -18,8 +18,7 @@ class MealIngredientUpdate(MealIngredientBase):
 
 class MealIngredientRead(MealIngredientBase):
     id: int
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Meal Schemas
 class MealBase(BaseModel):
@@ -39,8 +38,7 @@ class MealUpdate(MealBase):
 
 class MealReadBasic(MealBase):
     id: int
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MealReadDetail(MealReadBasic):
     ingredients: List[MealIngredientRead]
@@ -62,8 +60,7 @@ class ActivityUpdate(ActivityBase):
 class ActivityReadBasic(ActivityBase):
     id: int
     calories_burned: Optional[float] = None
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ActivityReadDetail(ActivityReadBasic):
     pass
@@ -83,8 +80,7 @@ class ConditionLogUpdate(ConditionLogBase):
 
 class ConditionLogReadBasic(ConditionLogBase):
     id: int
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ConditionLogReadDetail(ConditionLogReadBasic):
     pass
@@ -103,8 +99,7 @@ class InsulinDoseUpdate(InsulinDoseBase):
 
 class InsulinDoseReadBasic(InsulinDoseBase):
     id: int
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class InsulinDoseReadDetail(InsulinDoseReadBasic):
     pass
@@ -124,8 +119,7 @@ class GlucoseReadingUpdate(GlucoseReadingBase):
 
 class GlucoseReadingReadBasic(GlucoseReadingBase):
     id: int
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class GlucoseReadingReadDetail(GlucoseReadingReadBasic):
     pass

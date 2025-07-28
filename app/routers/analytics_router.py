@@ -5,7 +5,7 @@ from app.models.glucose_reading import GlucoseReading
 from app.core.security import get_current_user
 from app.models.user import User
 from typing import Optional, List, Dict, Any
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, UTC
 import statistics
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -118,7 +118,7 @@ def glucose_trend(
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
     # moving_avg: smooths out short-term spikes to show the overall trend. 
-    # This helps you see the “big picture” rather than getting distracted by every little up and down.
+    # This helps you see the "big picture" rather than getting distracted by every little up and down.
     moving_avg: Optional[int] = Query(None, description="Window size for moving average (in readings)"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -128,7 +128,7 @@ def glucose_trend(
     Supports optional moving average.
     """
     # Determine date range based on window
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     if window == "day":
         start = now.date()
         end = now.date()
@@ -207,7 +207,7 @@ def agp_overlay(
     """
     Returns glucose values overlaid by time of day for AGP plot, including median, p25, p75, min, max, and num_readings for each time slot.
     """
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     if window == "day":
         start = now.date()
         end = now.date()

@@ -8,7 +8,7 @@ from app.schemas import (
 )
 from app.core.security import get_current_user
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -49,14 +49,14 @@ def create_activity(activity_in: ActivityCreate, session: Session = Depends(get_
         type=activity_in.type,
         intensity=activity_in.intensity,
         duration_min=activity_in.duration_min,
-        timestamp=activity_in.timestamp or datetime.utcnow(),
+        timestamp=activity_in.timestamp or datetime.now(UTC),
         note=activity_in.note,
         calories_burned=calories
     )
     session.add(activity)
     session.commit()
     session.refresh(activity)
-    return ActivityReadDetail.from_orm(activity)
+    return ActivityReadDetail.model_validate(activity)
 
 @router.get("/", response_model=List[ActivityReadBasic])
 def list_activities(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -64,7 +64,7 @@ def list_activities(session: Session = Depends(get_session), current_user: User 
         activities = session.exec(select(Activity)).all()
     else:
         activities = session.exec(select(Activity).where(Activity.user_id == current_user.id)).all()
-    return [ActivityReadBasic.from_orm(a) for a in activities]
+    return [ActivityReadBasic.model_validate(a) for a in activities]
 
 @router.get("/{activity_id}", response_model=ActivityReadDetail)
 def get_activity(activity_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -73,7 +73,7 @@ def get_activity(activity_id: int, session: Session = Depends(get_session), curr
         raise HTTPException(status_code=404, detail="Activity not found")
     if not can_edit_activity(activity, current_user) and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
-    return ActivityReadDetail.from_orm(activity)
+    return ActivityReadDetail.model_validate(activity)
 
 @router.put("/{activity_id}", response_model=ActivityReadDetail)
 def update_activity(activity_id: int, activity_in: ActivityUpdate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -83,7 +83,7 @@ def update_activity(activity_id: int, activity_in: ActivityUpdate, session: Sess
     if not can_edit_activity(activity, current_user):
         raise HTTPException(status_code=403, detail="Not authorized")
     # Update fields
-    for field, value in activity_in.dict(exclude_unset=True).items():
+    for field, value in activity_in.model_dump(exclude_unset=True).items():
         setattr(activity, field, value)
     # Recalculate calories if relevant fields changed
     weight_kg = current_user.weight if current_user.weight else 70.0
@@ -91,7 +91,7 @@ def update_activity(activity_id: int, activity_in: ActivityUpdate, session: Sess
     activity.calories_burned = calculate_calories_burned(met, weight_kg, activity.duration_min)
     session.commit()
     session.refresh(activity)
-    return ActivityReadDetail.from_orm(activity)
+    return ActivityReadDetail.model_validate(activity)
 
 @router.delete("/{activity_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_activity(activity_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
