@@ -21,8 +21,8 @@
 - [x] Implement CRUD endpoints for InsulinDoses, GlucoseReadings, including units for InsulinDose and value/unit for GlucoseReading.
 - [x] Implement endpoint for CSV upload and parsing for CGM data, including semicolon-delimited files and mapping DAY/TIME/UDT_CGMS columns.
 - [~] Implement analytics endpoints (glucose summary implemented; trends, recommendations, etc. pending).
-    - [ ] Implement /analytics/glucose-trend endpoint: returns timestamped glucose readings for a selected timeframe (day, week, month, 3 months, custom), ready for line chart visualization. Supports optional moving average.
-    - [ ] Implement /analytics/agp-overlay endpoint: returns glucose values overlaid by time of day for AGP plot (median, percentiles, outliers).
+    - [x] Implement /analytics/glucose-trend endpoint: returns timestamped glucose readings for a selected timeframe (day, week, month, 3 months, custom), ready for line chart visualization. Supports optional moving average.
+    - [x] Implement /analytics/agp-overlay endpoint: returns glucose values overlaid by time of day for AGP plot (median, percentiles, outliers).
     - [ ] Implement /analytics/glucose-summary-by-period endpoint: returns summary stats (average, min, max, std dev, in-target percent) for each day, week, or month, supporting bar chart and heatmap visualizations.
     - [ ] Implement /analytics/time-in-range endpoint: returns percent of time spent in low, target, and high glucose ranges for a selected period, for pie/stacked bar charts.
     - [ ] Implement /analytics/glucose-variability endpoint: returns SD, CV, and GMI for selected timeframe, with plain-language explanations.
