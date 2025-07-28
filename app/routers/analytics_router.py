@@ -12,6 +12,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/glucose-summary")
 def glucose_summary(
+    group_by: Optional[str] = Query(None, description="Group by 'day', 'week', or 'month'. If not set, returns a summary for the whole range."),
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
     low: float = Query(70, description="Low threshold for in-target percent"),
@@ -19,6 +20,14 @@ def glucose_summary(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Returns a summary of glucose readings for the selected date range.
+    - If group_by is None, returns a single summary for the whole range.
+    - If group_by is 'day', 'week', or 'month', returns a list of summaries for each period.
+    """
+    from collections import defaultdict
+    import math
+
     # Build query for current user's glucose readings
     query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
     if start_date:
@@ -26,31 +35,81 @@ def glucose_summary(
     if end_date:
         query = query.where(GlucoseReading.timestamp <= datetime.combine(end_date, datetime.max.time()))
     readings = session.exec(query).all()
-    values = [r.value for r in readings if r.value is not None]
-    num_readings = len(values)
-    if num_readings == 0:
+    readings = [r for r in readings if r.value is not None and r.timestamp is not None]
+
+    if not group_by:
+        # Whole-range summary
+        values = [r.value for r in readings]
+        num_readings = len(values)
+        if num_readings == 0:
+            return {
+                "average": None,
+                "min": None,
+                "max": None,
+                "std_dev": None,
+                "num_readings": 0,
+                "in_target_percent": None
+            }
+        average = sum(values) / num_readings
+        min_val = min(values)
+        max_val = max(values)
+        std_dev = statistics.stdev(values) if num_readings > 1 else 0.0
+        in_target = [v for v in values if low <= v <= high]
+        in_target_percent = (len(in_target) / num_readings) * 100
         return {
-            "average": None,
-            "min": None,
-            "max": None,
-            "std_dev": None,
-            "num_readings": 0,
-            "in_target_percent": None
+            "average": average,
+            "min": min_val,
+            "max": max_val,
+            "std_dev": std_dev,
+            "num_readings": num_readings,
+            "in_target_percent": in_target_percent
         }
-    average = sum(values) / num_readings
-    min_val = min(values)
-    max_val = max(values)
-    std_dev = statistics.stdev(values) if num_readings > 1 else 0.0
-    in_target = [v for v in values if low <= v <= high]
-    in_target_percent = (len(in_target) / num_readings) * 100
-    return {
-        "average": average,
-        "min": min_val,
-        "max": max_val,
-        "std_dev": std_dev,
-        "num_readings": num_readings,
-        "in_target_percent": in_target_percent
-    }
+    else:
+        # Grouped summary
+        summary = []
+        groups = defaultdict(list)
+        for r in readings:
+            ts = r.timestamp
+            if group_by == "day":
+                key = ts.date().isoformat()
+            elif group_by == "week":
+                # ISO week: (year, week number)
+                key = f"{ts.isocalendar().year}-W{ts.isocalendar().week:02d}"
+            elif group_by == "month":
+                key = f"{ts.year}-{ts.month:02d}"
+            else:
+                raise HTTPException(status_code=400, detail="group_by must be 'day', 'week', or 'month'")
+            groups[key].append(r.value)
+        for period in sorted(groups.keys()):
+            values = groups[period]
+            num_readings = len(values)
+            if num_readings == 0:
+                continue
+            average = sum(values) / num_readings
+            min_val = min(values)
+            max_val = max(values)
+            std_dev = statistics.stdev(values) if num_readings > 1 else 0.0
+            in_target = [v for v in values if low <= v <= high]
+            in_target_percent = (len(in_target) / num_readings) * 100
+            summary.append({
+                "period": period,
+                "average": average,
+                "min": min_val,
+                "max": max_val,
+                "std_dev": std_dev,
+                "in_target_percent": in_target_percent,
+                "num_readings": num_readings
+            })
+        return {
+            "summary": summary,
+            "meta": {
+                "group_by": group_by,
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None
+            }
+        }
+
+# /glucose-summary-by-period will provide grouped summaries (by day, week, or month) for visualization and trend analysis.
 
 @router.get("/glucose-trend")
 def glucose_trend(
