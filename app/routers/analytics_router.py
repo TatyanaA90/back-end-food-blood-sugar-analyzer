@@ -427,3 +427,174 @@ def time_in_range(
         "counts": counts,
         "meta": meta
     }
+
+@router.get("/glucose-variability")
+def glucose_variability(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    include_explanations: bool = Query(True, description="Include plain-language explanations for each metric"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns glucose variability metrics (SD, CV, GMI) for the selected timeframe.
+    Includes plain-language explanations for clinical interpretation.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Query glucose readings for the user in the date range
+    query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        query = query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    readings = session.exec(query).all()
+    
+    # Filter valid readings
+    valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
+    
+    if len(valid_readings) < 2:
+        return {
+            "variability_metrics": {
+                "standard_deviation": None,
+                "coefficient_of_variation": None,
+                "glucose_management_indicator": None
+            },
+            "explanations": {
+                "standard_deviation": "Not enough data to calculate variability (need at least 2 readings)",
+                "coefficient_of_variation": "Not enough data to calculate variability (need at least 2 readings)",
+                "glucose_management_indicator": "Not enough data to calculate GMI (need at least 2 readings)"
+            },
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "total_readings": len(valid_readings),
+                "include_explanations": include_explanations
+            }
+        }
+
+    # Extract glucose values
+    values = [r.value for r in valid_readings]
+    mean_value = sum(values) / len(values)
+    
+    # Calculate Standard Deviation (SD)
+    variance = sum((x - mean_value) ** 2 for x in values) / len(values)
+    standard_deviation = variance ** 0.5
+    
+    # Calculate Coefficient of Variation (CV) - SD as percentage of mean
+    coefficient_of_variation = (standard_deviation / mean_value) * 100 if mean_value > 0 else 0
+    
+    # Calculate Glucose Management Indicator (GMI) - estimated A1C equivalent
+    # Formula: GMI = 3.31 + 0.02392 × mean glucose (mg/dl)
+    glucose_management_indicator = 3.31 + (0.02392 * mean_value)
+    
+    # Prepare response
+    variability_metrics = {
+        "standard_deviation": round(standard_deviation, 2),
+        "coefficient_of_variation": round(coefficient_of_variation, 2),
+        "glucose_management_indicator": round(glucose_management_indicator, 2),
+        "mean_glucose": round(mean_value, 2),
+        "min_glucose": min(values),
+        "max_glucose": max(values),
+        "total_readings": len(values)
+    }
+    
+    # Add plain-language explanations if requested
+    explanations = {}
+    if include_explanations:
+        # SD explanations
+        if standard_deviation < 20:
+            sd_explanation = "Excellent! Your blood sugar is very stable with low variability."
+        elif standard_deviation < 30:
+            sd_explanation = "Good! Your blood sugar shows moderate stability."
+        elif standard_deviation < 40:
+            sd_explanation = "Fair. Your blood sugar has some variability that could be improved."
+        else:
+            sd_explanation = "High variability detected. Consider discussing with your healthcare provider."
+        
+        # CV explanations
+        if coefficient_of_variation < 20:
+            cv_explanation = "Great stability! Your blood sugar changes very little compared to your average."
+        elif coefficient_of_variation < 30:
+            cv_explanation = "Good stability. Your blood sugar changes moderately compared to your average."
+        elif coefficient_of_variation < 40:
+            cv_explanation = "Moderate variability. Your blood sugar changes more than ideal."
+        else:
+            cv_explanation = "High variability. Your blood sugar changes significantly compared to your average."
+        
+        # GMI explanations
+        if glucose_management_indicator < 6.5:
+            gmi_explanation = f"Excellent control! Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
+        elif glucose_management_indicator < 7.0:
+            gmi_explanation = f"Good control! Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
+        elif glucose_management_indicator < 8.0:
+            gmi_explanation = f"Fair control. Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
+        else:
+            gmi_explanation = f"Needs improvement. Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
+        
+        explanations = {
+            "standard_deviation": sd_explanation,
+            "coefficient_of_variation": cv_explanation,
+            "glucose_management_indicator": gmi_explanation,
+            "overall_assessment": _get_overall_assessment(standard_deviation, coefficient_of_variation, glucose_management_indicator)
+        }
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "total_readings": len(valid_readings),
+        "include_explanations": include_explanations
+    }
+    
+    result = {
+        "variability_metrics": variability_metrics,
+        "meta": meta
+    }
+    
+    if include_explanations:
+        result["explanations"] = explanations
+    
+    return result
+
+def _get_overall_assessment(sd: float, cv: float, gmi: float) -> str:
+    """Generate overall assessment based on all metrics."""
+    good_metrics = 0
+    total_metrics = 3
+    
+    if sd < 30:
+        good_metrics += 1
+    if cv < 30:
+        good_metrics += 1
+    if gmi < 7.0:
+        good_metrics += 1
+    
+    if good_metrics == 3:
+        return "Excellent overall glucose control! Keep up the great work."
+    elif good_metrics == 2:
+        return "Good overall control with room for improvement in one area."
+    elif good_metrics == 1:
+        return "Fair control. Consider discussing with your healthcare provider."
+    else:
+        return "Blood sugar control needs attention. Please consult with your healthcare provider."

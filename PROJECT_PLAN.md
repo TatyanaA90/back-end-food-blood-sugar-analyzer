@@ -25,7 +25,7 @@
     - [x] Implement /analytics/glucose-trend endpoint: returns timestamped glucose readings for a selected timeframe (day, week, month, 3 months, custom), ready for line chart visualization. Supports optional moving average.
     - [x] Implement /analytics/agp-overlay endpoint: returns glucose values overlaid by time of day for AGP plot (median, percentiles, outliers).
     - [x] Implement /analytics/time-in-range endpoint: returns percent of time spent in low, target, and high glucose ranges for a selected period, for pie/stacked bar charts.
-    - [ ] Implement /analytics/glucose-variability endpoint: returns SD, CV, and GMI for selected timeframe, with plain-language explanations.
+    - [x] Implement /analytics/glucose-variability endpoint: returns SD, CV, and GMI for selected timeframe, with plain-language explanations.
     - [ ] Implement /analytics/glucose-events endpoint: lists hypo/hyperglycemia events with start/end times and durations, for event timeline visualizations.
     - [ ] Implement /analytics/meal-impact endpoint: shows average glucose change after meals, by meal type or time of day, for before/after meal visualizations.
     - [ ] Implement /analytics/activity-impact endpoint: shows how exercise affects glucose, for before/after activity visualizations.
@@ -38,7 +38,7 @@
     - [x] Test model validation and authentication
     - [x] Fix Pydantic V2 migration issues
     - [x] Fix datetime deprecation warnings
-    - [x] Verify all 15 tests pass successfully
+    - [x] Verify all 19 tests pass successfully
 - [x] Code quality and maintenance improvements.
     - [x] Update to Pydantic V2 syntax (ConfigDict, model_validate, model_dump)
     - [x] Fix datetime.utcnow() deprecation warnings for Python 3.13 compatibility
