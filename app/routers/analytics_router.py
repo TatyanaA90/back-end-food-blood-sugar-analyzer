@@ -598,3 +598,163 @@ def _get_overall_assessment(sd: float, cv: float, gmi: float) -> str:
         return "Fair control. Consider discussing with your healthcare provider."
     else:
         return "Blood sugar control needs attention. Please consult with your healthcare provider."
+
+@router.get("/glucose-events")
+def glucose_events(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    hypo_threshold: float = Query(70, description="Hypoglycemia threshold (mg/dl)"),
+    hyper_threshold: float = Query(180, description="Hyperglycemia threshold (mg/dl)"),
+    max_gap_minutes: int = Query(60, description="Maximum gap between readings to consider as same event (minutes)"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns hypo- and hyperglycemia events with start/end times and durations for event timeline visualizations.
+    An event starts when glucose crosses the threshold and ends when it returns to normal range.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Query glucose readings for the user in the date range
+    query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        query = query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    readings = session.exec(query).all()
+    
+    # Filter valid readings and sort by timestamp
+    valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
+    valid_readings.sort(key=lambda r: r.timestamp)
+    
+    if len(valid_readings) < 2:
+        return {
+            "events": [],
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "hypo_threshold": hypo_threshold,
+                "hyper_threshold": hyper_threshold,
+                "max_gap_minutes": max_gap_minutes,
+                "total_readings": len(valid_readings)
+            }
+        }
+
+    events = []
+    current_event = None
+    
+    for i, reading in enumerate(valid_readings):
+        value = reading.value
+        timestamp = reading.timestamp
+        
+        # Determine if this reading is in hypo or hyper range
+        if value < hypo_threshold:
+            event_type = "hypo"
+        elif value > hyper_threshold:
+            event_type = "hyper"
+        else:
+            # Reading is in normal range - end current event if exists
+            if current_event:
+                current_event["end"] = valid_readings[i-1].timestamp.isoformat()
+                current_event["duration_minutes"] = int((valid_readings[i-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
+                events.append(current_event)
+                current_event = None
+            continue
+        
+        # Check if we should start a new event
+        if current_event is None:
+            # Start new event
+            current_event = {
+                "type": event_type,
+                "start": timestamp.isoformat(),
+                "start_dt": timestamp,  # Keep datetime object for calculations
+                "min_value": value,
+                "max_value": value,
+                "num_readings": 1
+            }
+        elif current_event["type"] == event_type:
+            # Continue current event
+            current_event["max_value"] = max(current_event["max_value"], value)
+            current_event["min_value"] = min(current_event["min_value"], value)
+            current_event["num_readings"] += 1
+            
+            # Check if gap is too large (start new event)
+            if i > 0:
+                time_diff = (timestamp - valid_readings[i-1].timestamp).total_seconds() / 60
+                if time_diff > max_gap_minutes:
+                    # End current event and start new one
+                    current_event["end"] = valid_readings[i-1].timestamp.isoformat()
+                    current_event["duration_minutes"] = int((valid_readings[i-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
+                    events.append(current_event)
+                    
+                    # Start new event
+                    current_event = {
+                        "type": event_type,
+                        "start": timestamp.isoformat(),
+                        "start_dt": timestamp,
+                        "min_value": value,
+                        "max_value": value,
+                        "num_readings": 1
+                    }
+        else:
+            # Different event type - end current event and start new one
+            current_event["end"] = valid_readings[i-1].timestamp.isoformat()
+            current_event["duration_minutes"] = int((valid_readings[i-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
+            events.append(current_event)
+            
+            # Start new event
+            current_event = {
+                "type": event_type,
+                "start": timestamp.isoformat(),
+                "start_dt": timestamp,
+                "min_value": value,
+                "max_value": value,
+                "num_readings": 1
+            }
+    
+    # Handle last event if it exists
+    if current_event:
+        current_event["end"] = valid_readings[-1].timestamp.isoformat()
+        current_event["duration_minutes"] = int((valid_readings[-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
+        events.append(current_event)
+    
+    # Remove internal datetime object from events
+    for event in events:
+        del event["start_dt"]
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "hypo_threshold": hypo_threshold,
+        "hyper_threshold": hyper_threshold,
+        "max_gap_minutes": max_gap_minutes,
+        "total_readings": len(valid_readings),
+        "total_events": len(events)
+    }
+    
+    return {
+        "events": events,
+        "meta": meta
+    }

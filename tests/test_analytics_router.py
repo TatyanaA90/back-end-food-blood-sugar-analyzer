@@ -1,7 +1,9 @@
 import pytest
 import uuid
+from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
 from app.main import app
+from sqlalchemy import select
 
 client = TestClient(app)
 
@@ -407,3 +409,187 @@ def test_glucose_variability_high_variability():
     explanations = data["explanations"]
     assert "High variability" in explanations["standard_deviation"] or "needs attention" in explanations["standard_deviation"]
     assert "High variability" in explanations["coefficient_of_variation"] or "significantly" in explanations["coefficient_of_variation"] 
+
+def test_glucose_events_endpoint():
+    """Test the glucose-events endpoint with various scenarios."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"glucoseeventstest{unique_id}@example.com"
+    username = f"glucoseeventstestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Glucose Events Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create readings: normal -> hypo -> normal -> hyper -> normal
+    base_time = datetime.now(UTC)
+    readings_data = [
+        # Normal readings
+        {"value": 120, "timestamp": base_time, "unit": "mg/dl"},
+        {"value": 125, "timestamp": base_time + timedelta(minutes=15), "unit": "mg/dl"},
+        # Hypo event
+        {"value": 65, "timestamp": base_time + timedelta(minutes=30), "unit": "mg/dl"},
+        {"value": 68, "timestamp": base_time + timedelta(minutes=45), "unit": "mg/dl"},
+        {"value": 62, "timestamp": base_time + timedelta(minutes=60), "unit": "mg/dl"},
+        # Back to normal
+        {"value": 110, "timestamp": base_time + timedelta(minutes=75), "unit": "mg/dl"},
+        {"value": 115, "timestamp": base_time + timedelta(minutes=90), "unit": "mg/dl"},
+        # Hyper event
+        {"value": 185, "timestamp": base_time + timedelta(minutes=105), "unit": "mg/dl"},
+        {"value": 200, "timestamp": base_time + timedelta(minutes=120), "unit": "mg/dl"},
+        {"value": 195, "timestamp": base_time + timedelta(minutes=135), "unit": "mg/dl"},
+        # Back to normal
+        {"value": 130, "timestamp": base_time + timedelta(minutes=150), "unit": "mg/dl"},
+    ]
+    
+    # Add glucose readings via API
+    for reading_data in readings_data:
+        client.post("/glucose-readings", json={
+            "value": reading_data["value"],
+            "timestamp": reading_data["timestamp"].isoformat(),
+            "unit": reading_data["unit"]
+        }, headers=headers)
+    
+    # Test glucose events endpoint
+    response = client.get("/analytics/glucose-events", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert "events" in data
+    assert "meta" in data
+    assert len(data["events"]) == 2  # One hypo, one hyper event
+    
+    # Check hypo event
+    hypo_event = next((e for e in data["events"] if e["type"] == "hypo"), None)
+    assert hypo_event is not None
+    assert hypo_event["type"] == "hypo"
+    assert hypo_event["min_value"] == 62
+    assert hypo_event["max_value"] == 68
+    assert hypo_event["num_readings"] == 3
+    assert hypo_event["duration_minutes"] == 30  # 30 minutes duration
+    
+    # Check hyper event
+    hyper_event = next((e for e in data["events"] if e["type"] == "hyper"), None)
+    assert hyper_event is not None
+    assert hyper_event["type"] == "hyper"
+    assert hyper_event["min_value"] == 185
+    assert hyper_event["max_value"] == 200
+    assert hyper_event["num_readings"] == 3
+    assert hyper_event["duration_minutes"] == 30  # 30 minutes duration
+    
+    # Check meta information
+    meta = data["meta"]
+    assert meta["hypo_threshold"] == 70
+    assert meta["hyper_threshold"] == 180
+    assert meta["max_gap_minutes"] == 60
+    assert meta["total_readings"] == 11
+    assert meta["total_events"] == 2
+
+def test_glucose_events_custom_thresholds():
+    """Test glucose-events endpoint with custom thresholds."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"glucoseeventstestcustom{unique_id}@example.com"
+    username = f"glucoseeventstestcustomuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Glucose Events Custom Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create test glucose readings
+    base_time = datetime.now(UTC)
+    readings_data = [
+        {"value": 80, "timestamp": base_time, "unit": "mg/dl"},  # Would be hypo with custom threshold
+        {"value": 200, "timestamp": base_time + timedelta(minutes=15), "unit": "mg/dl"},  # Would be hyper with custom threshold
+    ]
+    
+    # Add glucose readings via API
+    for reading_data in readings_data:
+        client.post("/glucose-readings", json={
+            "value": reading_data["value"],
+            "timestamp": reading_data["timestamp"].isoformat(),
+            "unit": reading_data["unit"]
+        }, headers=headers)
+    
+    # Test with custom thresholds
+    response = client.get(
+        "/analytics/glucose-events?hypo_threshold=85&hyper_threshold=190",
+        headers=headers
+    )
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["events"]) == 2  # Both readings should be events with custom thresholds
+    
+    # Check meta has custom thresholds
+    meta = data["meta"]
+    assert meta["hypo_threshold"] == 85
+    assert meta["hyper_threshold"] == 190
+
+def test_glucose_events_no_events():
+    """Test glucose-events endpoint when no events exist."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"glucoseeventstestnone{unique_id}@example.com"
+    username = f"glucoseeventstestnoneuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Glucose Events None Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create only normal glucose readings
+    base_time = datetime.now(UTC)
+    readings_data = [
+        {"value": 120, "timestamp": base_time, "unit": "mg/dl"},
+        {"value": 125, "timestamp": base_time + timedelta(minutes=15), "unit": "mg/dl"},
+        {"value": 130, "timestamp": base_time + timedelta(minutes=30), "unit": "mg/dl"},
+    ]
+    
+    # Add glucose readings via API
+    for reading_data in readings_data:
+        client.post("/glucose-readings", json={
+            "value": reading_data["value"],
+            "timestamp": reading_data["timestamp"].isoformat(),
+            "unit": reading_data["unit"]
+        }, headers=headers)
+    
+    # Test glucose events endpoint
+    response = client.get("/analytics/glucose-events", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["events"]) == 0  # No events should be found
+    assert data["meta"]["total_events"] == 0 

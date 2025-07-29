@@ -26,7 +26,7 @@
     - [x] Implement /analytics/agp-overlay endpoint: returns glucose values overlaid by time of day for AGP plot (median, percentiles, outliers).
     - [x] Implement /analytics/time-in-range endpoint: returns percent of time spent in low, target, and high glucose ranges for a selected period, for pie/stacked bar charts.
     - [x] Implement /analytics/glucose-variability endpoint: returns SD, CV, and GMI for selected timeframe, with plain-language explanations.
-    - [ ] Implement /analytics/glucose-events endpoint: lists hypo/hyperglycemia events with start/end times and durations, for event timeline visualizations.
+    - [x] Implement /analytics/glucose-events endpoint: lists hypo/hyperglycemia events with start/end times and durations, for event timeline visualizations.
     - [ ] Implement /analytics/meal-impact endpoint: shows average glucose change after meals, by meal type or time of day, for before/after meal visualizations.
     - [ ] Implement /analytics/activity-impact endpoint: shows how exercise affects glucose, for before/after activity visualizations.
     - [ ] Implement /analytics/insulin-glucose-correlation endpoint: analyzes relationship between insulin doses and glucose changes, for scatter plot visualizations.
