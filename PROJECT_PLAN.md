@@ -24,7 +24,7 @@
     - [x] Implement /analytics/glucose-summary endpoint: returns summary statistics with optional grouping (day/week/month) or whole-range summary, supporting both basic stats and period-based analysis.
     - [x] Implement /analytics/glucose-trend endpoint: returns timestamped glucose readings for a selected timeframe (day, week, month, 3 months, custom), ready for line chart visualization. Supports optional moving average.
     - [x] Implement /analytics/agp-overlay endpoint: returns glucose values overlaid by time of day for AGP plot (median, percentiles, outliers).
-    - [ ] Implement /analytics/time-in-range endpoint: returns percent of time spent in low, target, and high glucose ranges for a selected period, for pie/stacked bar charts.
+    - [x] Implement /analytics/time-in-range endpoint: returns percent of time spent in low, target, and high glucose ranges for a selected period, for pie/stacked bar charts.
     - [ ] Implement /analytics/glucose-variability endpoint: returns SD, CV, and GMI for selected timeframe, with plain-language explanations.
     - [ ] Implement /analytics/glucose-events endpoint: lists hypo/hyperglycemia events with start/end times and durations, for event timeline visualizations.
     - [ ] Implement /analytics/meal-impact endpoint: shows average glucose change after meals, by meal type or time of day, for before/after meal visualizations.

@@ -7,6 +7,8 @@ from app.models.user import User
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date, timedelta, UTC
 import statistics
+from collections import defaultdict
+import math
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -25,8 +27,6 @@ def glucose_summary(
     - If group_by is None, returns a single summary for the whole range.
     - If group_by is 'day', 'week', or 'month', returns a list of summaries for each period.
     """
-    from collections import defaultdict
-    import math
 
     # Build query for current user's glucose readings
     query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
@@ -118,7 +118,7 @@ def glucose_trend(
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
     # moving_avg: smooths out short-term spikes to show the overall trend. 
-    # This helps you see the "big picture" rather than getting distracted by every little up and down.
+    # This helps to see the "big picture" rather than getting distracted by every little up and down.
     moving_avg: Optional[int] = Query(None, description="Window size for moving average (in readings)"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
@@ -282,3 +282,148 @@ def agp_overlay(
     }
 
     return {"agp": agp, "meta": meta}
+
+@router.get("/time-in-range")
+def time_in_range(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    very_low_threshold: float = Query(54, description="Very low glucose threshold (mg/dl)"),
+    low_threshold: float = Query(70, description="Low glucose threshold (mg/dl)"),
+    target_low: float = Query(70, description="Target range low threshold (mg/dl)"),
+    target_high: float = Query(180, description="Target range high threshold (mg/dl)"),
+    high_threshold: float = Query(250, description="High glucose threshold (mg/dl)"),
+    very_high_threshold: float = Query(400, description="Very high glucose threshold (mg/dl)"),
+    unit: str = Query("mg/dl", description="Unit for thresholds: 'mg/dl' or 'mmol/l'"),
+    show_percentage: bool = Query(True, description="Show results as percentages (True) or absolute values (False)"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns percentage of time spent in different glucose ranges for the selected period.
+    Useful for pie charts and stacked bar visualizations.
+    """
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Query all glucose readings for the user in the date range
+    query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        query = query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    readings = session.exec(query).all()
+    
+    # Filter valid readings
+    valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
+    
+    if not valid_readings:
+        return {
+            "time_in_range": {
+                "very_low": 0.0,
+                "low": 0.0,
+                "in_range": 0.0,
+                "high": 0.0,
+                "very_high": 0.0
+            },
+            "total_readings": 0,
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "very_low_threshold": very_low_threshold,
+                "low_threshold": low_threshold,
+                "target_low": target_low,
+                "target_high": target_high,
+                "high_threshold": high_threshold,
+                "very_high_threshold": very_high_threshold,
+                "unit": unit
+            }
+        }
+
+    # Count readings in each range
+    very_low_count = 0
+    low_count = 0
+    in_range_count = 0
+    high_count = 0
+    very_high_count = 0
+    
+    for reading in valid_readings:
+        value = reading.value
+        if value < very_low_threshold:
+            very_low_count += 1
+        elif very_low_threshold <= value < low_threshold:
+            low_count += 1
+        elif target_low <= value <= target_high:
+            in_range_count += 1
+        elif target_high < value <= high_threshold:
+            high_count += 1
+        else:  # value > high_threshold
+            very_high_count += 1
+    
+    total_readings = len(valid_readings)
+    
+    # Calculate percentages or absolute values based on show_percentage parameter
+    if show_percentage:
+        time_in_range_data = {
+            "very_low": round((very_low_count / total_readings) * 100, 2),
+            "low": round((low_count / total_readings) * 100, 2),
+            "in_range": round((in_range_count / total_readings) * 100, 2),
+            "high": round((high_count / total_readings) * 100, 2),
+            "very_high": round((very_high_count / total_readings) * 100, 2)
+        }
+    else:
+        time_in_range_data = {
+            "very_low": very_low_count,
+            "low": low_count,
+            "in_range": in_range_count,
+            "high": high_count,
+            "very_high": very_high_count
+        }
+    
+    # Add raw counts for additional context
+    counts = {
+        "very_low": very_low_count,
+        "low": low_count,
+        "in_range": in_range_count,
+        "high": high_count,
+        "very_high": very_high_count
+    }
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "very_low_threshold": very_low_threshold,
+        "low_threshold": low_threshold,
+        "target_low": target_low,
+        "target_high": target_high,
+        "high_threshold": high_threshold,
+        "very_high_threshold": very_high_threshold,
+        "unit": unit,
+        "show_percentage": show_percentage,
+        "total_readings": total_readings
+    }
+    
+    return {
+        "time_in_range": time_in_range_data,
+        "counts": counts,
+        "meta": meta
+    }
