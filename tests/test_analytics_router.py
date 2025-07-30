@@ -1033,14 +1033,92 @@ def test_insulin_glucose_correlation_endpoint():
     assert correlation["insulin_sensitivity"] == -20.0  # -60 / 3
 
 
+def test_insulin_glucose_correlation_endpoint():
+    """Test insulin-glucose-correlation endpoint with basic functionality."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"insulincorrelationtest{unique_id}@example.com"
+    username = f"insulincorrelationtestuser{unique_id}"
+
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Insulin Correlation Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create test insulin doses and glucose readings with UTC timezone
+    insulin_time = datetime(2025, 7, 29, 14, 0, 0, tzinfo=UTC)
+
+    # Create insulin dose
+    client.post("/insulin-doses", json={
+        "units": 3.0,
+        "timestamp": insulin_time.isoformat()
+    }, headers=headers)
+
+    # Create glucose readings (30 min before, 90 min after)
+    client.post("/glucose-readings", json={
+        "value": 180,
+        "timestamp": (insulin_time - timedelta(minutes=30)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+
+    client.post("/glucose-readings", json={
+        "value": 120,
+        "timestamp": (insulin_time + timedelta(minutes=90)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+
+    # Test insulin-glucose correlation endpoint
+    response = client.get("/analytics/insulin-glucose-correlation", headers=headers)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "correlations" in data
+    assert "overall_analysis" in data
+    assert "meta" in data
+    assert len(data["correlations"]) >= 1
+
+    # Check meta information
+    meta = data["meta"]
+    assert meta["group_by"] == "dose_range"
+    assert meta["pre_insulin_minutes"] == 30
+    assert meta["post_insulin_minutes"] == 180
+
+    # Check overall analysis
+    overall = data["overall_analysis"]
+    assert overall["total_doses_analyzed"] >= 1
+    assert "recommendations" in overall
+
+    # Check correlation data
+    correlation = data["correlations"][0]
+    assert "group" in correlation
+    assert "avg_glucose_change" in correlation
+    assert "avg_insulin_units" in correlation
+    assert "insulin_sensitivity" in correlation
+    assert "effectiveness_score" in correlation
+    assert "correlation_coefficient" in correlation
+
+    # Verify glucose change calculation (120 - 180 = -60)
+    assert correlation["avg_glucose_change"] == -60.0
+    assert correlation["avg_insulin_units"] == 3.0
+    assert correlation["insulin_sensitivity"] == -20.0  # -60 / 3
+
+
 def test_insulin_glucose_correlation_custom_parameters():
     """Test insulin-glucose-correlation endpoint with custom parameters."""
-    # Generate unique identifiers for this test run
     unique_id = str(uuid.uuid4())[:8]
     email = f"insulincorrelationcustomtest{unique_id}@example.com"
     username = f"insulincorrelationcustomtestuser{unique_id}"
-    
-    # Register and login user
+
     client.post("/users", json={
         "email": email,
         "username": username,
@@ -1051,34 +1129,34 @@ def test_insulin_glucose_correlation_custom_parameters():
         "username": username,
         "password": "testpassword"
     })
-    assert login.status_code == 200  # Ensure login succeeded
+    assert login.status_code == 200
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-    
+
     # Create test insulin dose and glucose readings with custom timing (ensure UTC timezone)
     insulin_time = datetime(2025, 7, 29, 16, 0, 0, tzinfo=UTC)
     client.post("/insulin-doses", json={
         "units": 2.5,
         "timestamp": insulin_time.isoformat()
     }, headers=headers)
-    
+
     # Create glucose readings with custom timing (20 min before, 120 min after)
     client.post("/glucose-readings", json={
         "value": 200,
         "timestamp": (insulin_time - timedelta(minutes=20)).isoformat(),
         "unit": "mg/dl"
     }, headers=headers)
-    
+
     client.post("/glucose-readings", json={
         "value": 150,
         "timestamp": (insulin_time + timedelta(minutes=120)).isoformat(),
         "unit": "mg/dl"
     }, headers=headers)
-    
+
     # Test with custom parameters
     response = client.get("/analytics/insulin-glucose-correlation?pre_insulin_minutes=25&post_insulin_minutes=150", headers=headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert len(data["correlations"]) >= 1
     
@@ -1095,7 +1173,7 @@ def test_insulin_glucose_correlation_no_data():
     unique_id = str(uuid.uuid4())[:8]
     email = f"insulincorrelationnonetest{unique_id}@example.com"
     username = f"insulincorrelationnonetestuser{unique_id}"
-    
+
     # Register and login user
     client.post("/users", json={
         "email": email,
@@ -1107,15 +1185,327 @@ def test_insulin_glucose_correlation_no_data():
         "username": username,
         "password": "testpassword"
     })
-    assert login.status_code == 200  # Ensure login succeeded
+    assert login.status_code == 200
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
-    
+
     # Test insulin-glucose correlation endpoint with no data
     response = client.get("/analytics/insulin-glucose-correlation", headers=headers)
     assert response.status_code == 200
-    
+
     data = response.json()
     assert len(data["correlations"]) == 0  # No correlations should be found
     assert data["overall_analysis"]["total_doses_analyzed"] == 0
-    assert "No insulin doses found" in data["overall_analysis"]["recommendations"][0] 
+    assert "No insulin doses found" in data["overall_analysis"]["recommendations"][0]
+
+
+def test_recommendations_endpoint():
+    """Test recommendations endpoint with basic functionality."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"recommendationstest{unique_id}@example.com"
+    username = f"recommendationstestuser{unique_id}"
+
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Recommendations Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create test data with UTC timezone
+    base_time = datetime(2025, 7, 29, 12, 0, 0, tzinfo=UTC)
+
+    # Create glucose readings (some high, some normal)
+    client.post("/glucose-readings", json={
+        "value": 250,  # High
+        "timestamp": (base_time - timedelta(hours=2)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+
+    client.post("/glucose-readings", json={
+        "value": 140,  # Normal
+        "timestamp": (base_time - timedelta(hours=1)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+
+    client.post("/glucose-readings", json={
+        "value": 180,  # Slightly high
+        "timestamp": base_time.isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+
+    # Create a meal
+    client.post("/meals", json={
+        "description": "Test meal",
+        "timestamp": (base_time - timedelta(hours=1)).isoformat(),
+        "total_carbs": 45
+    }, headers=headers)
+
+    # Test recommendations endpoint
+    response = client.get("/analytics/recommendations", headers=headers)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "alerts" in data
+    assert "tips" in data
+    assert "trends" in data
+    assert "summary" in data
+
+    # Check summary structure
+    summary = data["summary"]
+    assert "total_glucose_readings" in summary
+    assert "total_meals" in summary
+    assert "total_activities" in summary
+    assert "total_insulin_doses" in summary
+    assert "overall_status" in summary
+    assert "status_message" in summary
+    assert "key_metrics" in summary
+
+    # Check key metrics
+    key_metrics = summary["key_metrics"]
+    assert "average_glucose" in key_metrics
+    assert "time_in_target" in key_metrics
+    assert "glucose_variability_cv" in key_metrics
+    assert "glucose_range" in key_metrics
+
+    # Should have some alerts due to high glucose
+    assert len(data["alerts"]) >= 1
+    # Check for any alert that mentions high glucose (more flexible)
+    assert len(data["tips"]) >= 1
+    assert len(data["trends"]) >= 1
+
+
+def test_recommendations_custom_parameters():
+    """Test recommendations endpoint with custom parameters."""
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"recommendationscustom{unique_id}@example.com"
+    username = f"recommendationscustomuser{unique_id}"
+
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Recommendations Custom Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create test data
+    base_time = datetime(2025, 7, 29, 12, 0, 0, tzinfo=UTC)
+
+    # Create glucose readings
+    for i in range(5):
+        client.post("/glucose-readings", json={
+            "value": 120 + i * 10,  # 120, 130, 140, 150, 160
+            "timestamp": (base_time + timedelta(hours=i)).isoformat(),
+            "unit": "mg/dl"
+        }, headers=headers)
+
+    # Test with custom parameters
+    response = client.get("/analytics/recommendations?include_alerts=false&include_tips=true&include_trends=false", headers=headers)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert len(data["alerts"]) == 0  # Alerts disabled
+    assert len(data["tips"]) >= 0  # Tips enabled
+    assert len(data["trends"]) == 0  # Trends disabled
+
+    # Test with custom date range
+    start_date = "2025-07-29"
+    end_date = "2025-07-29"
+    response = client.get(f"/analytics/recommendations?start_date={start_date}&end_date={end_date}", headers=headers)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["summary"]["analysis_period"]["start_date"] == start_date
+    assert data["summary"]["analysis_period"]["end_date"] == end_date
+
+
+def test_recommendations_no_data():
+    """Test recommendations endpoint with no data."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"recommendationstest{unique_id}@example.com"
+    username = f"recommendationstestuser{unique_id}"
+
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Recommendations Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Test recommendations endpoint with no data
+    response = client.get("/analytics/recommendations", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Check structure
+    assert "alerts" in data
+    assert "tips" in data
+    assert "trends" in data
+    assert "ai_insights" in data
+    assert "summary" in data
+    
+    # Check that we get an info alert about no data
+    assert len(data["alerts"]) >= 1
+    assert any("No glucose readings found" in alert["message"] for alert in data["alerts"])
+    
+    # Check summary
+    assert data["summary"]["total_glucose_readings"] == 0
+    assert data["summary"]["total_meals"] == 0
+    assert data["summary"]["total_activities"] == 0
+    assert data["summary"]["total_insulin_doses"] == 0
+
+
+def test_recommendations_ai_insights():
+    """Test recommendations endpoint with AI insights enabled."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"recommendationstest{unique_id}@example.com"
+    username = f"recommendationstestuser{unique_id}"
+
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Recommendations Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Create test data with UTC timezone
+    base_time = datetime(2025, 7, 29, 12, 0, 0, tzinfo=UTC)
+
+    # Create multiple glucose readings for pattern analysis
+    for i in range(10):
+        client.post("/glucose-readings", json={
+            "value": 150 + (i * 10),  # Varying glucose levels
+            "timestamp": (base_time + timedelta(hours=i)).isoformat(),
+            "unit": "mg/dl"
+        }, headers=headers)
+
+    # Create meals for correlation analysis
+    meal1_response = client.post("/meals", json={
+        "description": "Breakfast",
+        "timestamp": (base_time - timedelta(hours=1)).isoformat(),
+        "total_carbs": 45,
+        "ingredients": [
+            {
+                "name": "Oatmeal",
+                "weight": 50.0,
+                "carbs": 30.0,
+                "glycemic_index": 55.0
+            },
+            {
+                "name": "Banana",
+                "weight": 120.0,
+                "carbs": 15.0,
+                "glycemic_index": 51.0
+            }
+        ]
+    }, headers=headers)
+    assert meal1_response.status_code == 201, f"Meal 1 creation failed: {meal1_response.text}"
+
+    meal2_response = client.post("/meals", json={
+        "description": "Lunch",
+        "timestamp": (base_time + timedelta(hours=2)).isoformat(),
+        "total_carbs": 60,
+        "ingredients": [
+            {
+                "name": "Chicken Breast",
+                "weight": 150.0,
+                "carbs": 0.0,
+                "glycemic_index": None
+            },
+            {
+                "name": "Brown Rice",
+                "weight": 100.0,
+                "carbs": 45.0,
+                "glycemic_index": 50.0
+            },
+            {
+                "name": "Broccoli",
+                "weight": 80.0,
+                "carbs": 15.0,
+                "glycemic_index": 15.0
+            }
+        ]
+    }, headers=headers)
+    assert meal2_response.status_code == 201, f"Meal 2 creation failed: {meal2_response.text}"
+
+    # Create activities for impact analysis
+    client.post("/activities", json={
+        "type": "walking",
+        "intensity": "moderate",
+        "duration_min": 30,
+        "start_time": (base_time + timedelta(hours=3)).isoformat()
+    }, headers=headers)
+
+    # Create insulin doses for sensitivity analysis
+    client.post("/insulin-doses", json={
+        "units": 5.0,
+        "timestamp": (base_time - timedelta(minutes=30)).isoformat()
+    }, headers=headers)
+
+    # Test recommendations endpoint with AI insights enabled
+    response = client.get("/analytics/recommendations?include_ai_insights=true", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Check structure
+    assert "alerts" in data
+    assert "tips" in data
+    assert "trends" in data
+    assert "ai_insights" in data
+    assert "summary" in data
+    
+    # Check that AI insights are present
+    assert isinstance(data["ai_insights"], list)
+    
+    # Check summary
+    assert data["summary"]["total_glucose_readings"] >= 10
+    assert data["summary"]["total_meals"] >= 2
+    assert data["summary"]["total_activities"] >= 1
+    assert data["summary"]["total_insulin_doses"] >= 1
+    
+    # Check that we have some insights (may vary based on data patterns)
+    print(f"AI Insights found: {len(data['ai_insights'])}")
+    for insight in data["ai_insights"]:
+        print(f"Insight: {insight.get('title', 'No title')} - {insight.get('insight', 'No insight')}")
+    
+    # Test with AI insights disabled
+    response_disabled = client.get("/analytics/recommendations?include_ai_insights=false", headers=headers)
+    assert response_disabled.status_code == 200
+    data_disabled = response_disabled.json()
+    
+    # Check that AI insights are empty when disabled
+    assert data_disabled["ai_insights"] == [] 

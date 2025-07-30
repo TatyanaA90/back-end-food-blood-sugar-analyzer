@@ -1572,3 +1572,650 @@ def insulin_glucose_correlation(
         "overall_analysis": overall_analysis,
         "meta": meta
     }
+
+
+@router.get("/recommendations")
+def recommendations(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    include_alerts: bool = Query(True, description="Include urgent alerts and warnings"),
+    include_tips: bool = Query(True, description="Include actionable tips and suggestions"),
+    include_trends: bool = Query(True, description="Include trend analysis and insights"),
+    include_ai_insights: bool = Query(True, description="Include AI-generated personalized insights"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns personalized recommendations based on recent data analysis.
+    Provides actionable tips, alerts, and insights for diabetes management.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Query recent data for analysis
+    glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    glucose_readings = session.exec(glucose_query).all()
+    glucose_readings = [r for r in glucose_readings if r.value is not None and r.timestamp is not None]
+
+    meal_query = select(Meal).where(Meal.user_id == current_user.id)
+    if start:
+        meal_query = meal_query.where(Meal.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        meal_query = meal_query.where(Meal.timestamp <= datetime.combine(end, datetime.max.time()))
+    meals = session.exec(meal_query).all()
+
+    activity_query = select(Activity).where(Activity.user_id == current_user.id)
+    if start:
+        activity_query = activity_query.where(Activity.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        activity_query = activity_query.where(Activity.timestamp <= datetime.combine(end, datetime.max.time()))
+    activities = session.exec(activity_query).all()
+
+    insulin_query = select(InsulinDose).where(InsulinDose.user_id == current_user.id)
+    if start:
+        insulin_query = insulin_query.where(InsulinDose.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        insulin_query = insulin_query.where(InsulinDose.timestamp <= datetime.combine(end, datetime.max.time()))
+    insulin_doses = session.exec(insulin_query).all()
+
+    recommendations = {
+        "alerts": [],
+        "tips": [],
+        "trends": [],
+        "ai_insights": [],
+        "summary": {
+            "total_glucose_readings": len(glucose_readings),
+            "total_meals": len(meals),
+            "total_activities": len(activities),
+            "total_insulin_doses": len(insulin_doses),
+            "analysis_period": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "days_analyzed": (end - start).days + 1 if start and end else None
+            }
+        }
+    }
+
+    if not glucose_readings:
+        recommendations["alerts"].append({
+            "type": "info",
+            "priority": "medium",
+            "message": "No glucose readings found in the specified period. Consider adding more data for personalized recommendations.",
+            "action": "Add glucose readings to get personalized insights"
+        })
+        return recommendations
+
+    # Calculate basic metrics
+    glucose_values = [r.value for r in glucose_readings]
+    avg_glucose = sum(glucose_values) / len(glucose_values)
+    min_glucose = min(glucose_values)
+    max_glucose = max(glucose_values)
+    
+    # Calculate time in target range (70-180 mg/dl)
+    in_target = [v for v in glucose_values if 70 <= v <= 180]
+    time_in_target = (len(in_target) / len(glucose_values)) * 100
+    
+    # Calculate coefficient of variation (CV)
+    if len(glucose_values) > 1:
+        mean = sum(glucose_values) / len(glucose_values)
+        variance = sum((x - mean) ** 2 for x in glucose_values) / (len(glucose_values) - 1)
+        std_dev = math.sqrt(variance)
+        cv = (std_dev / mean) * 100
+    else:
+        cv = 0.0
+
+    # Generate alerts
+    if include_alerts:
+        # High glucose alerts
+        if avg_glucose > 200:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "high",
+                "message": f"Average glucose is high ({avg_glucose:.0f} mg/dl). Consider adjusting insulin or meal timing.",
+                "action": "Review recent meals and insulin doses"
+            })
+        
+        if max_glucose > 300:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "high",
+                "message": f"Maximum glucose reading is very high ({max_glucose:.0f} mg/dl).",
+                "action": "Check for ketones and contact healthcare provider if needed"
+            })
+        
+        if min_glucose < 70:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "medium",
+                "message": f"Minimum glucose reading is low ({min_glucose:.0f} mg/dl).",
+                "action": "Be prepared for hypoglycemia and carry fast-acting carbs"
+            })
+        
+        if min_glucose < 54:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "high",
+                "message": f"Severe hypoglycemia detected ({min_glucose:.0f} mg/dl).",
+                "action": "Treat immediately and review insulin dosing"
+            })
+        
+        if cv > 36:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "medium",
+                "message": f"High glucose variability (CV: {cv:.1f}%).",
+                "action": "Focus on consistent meal timing and insulin dosing"
+            })
+        
+        if time_in_target < 70:
+            recommendations["alerts"].append({
+                "type": "warning",
+                "priority": "medium",
+                "message": f"Low time in target range ({time_in_target:.1f}%). Aim for at least 70%.",
+                "action": "Review glucose management strategies"
+            })
+
+    # Generate tips
+    if include_tips:
+        # Meal tips
+        if meals:
+            avg_carbs = sum(m.total_carbs or 0 for m in meals) / len(meals)
+            if avg_carbs > 60:
+                recommendations["tips"].append({
+                    "category": "nutrition",
+                    "message": f"Average meal carbs are high ({avg_carbs:.0f}g). Consider smaller portions for better control.",
+                    "priority": "medium"
+                })
+            elif avg_carbs < 30:
+                recommendations["tips"].append({
+                    "category": "nutrition",
+                    "message": f"Average meal carbs are low ({avg_carbs:.0f}g). Ensure adequate nutrition.",
+                    "priority": "medium"
+                })
+            else:
+                recommendations["tips"].append({
+                    "category": "nutrition",
+                    "message": f"Average meal carbs are moderate ({avg_carbs:.0f}g). Consider smaller portions for better control.",
+                    "priority": "medium"
+                })
+        
+        # Activity tips
+        if activities:
+            avg_duration = sum(a.duration_min or 0 for a in activities) / len(activities)
+            if avg_duration < 30:
+                recommendations["tips"].append({
+                    "category": "exercise",
+                    "message": "Consider increasing activity duration for better glucose control.",
+                    "priority": "medium"
+                })
+        
+        # Insulin tips
+        if insulin_doses:
+            avg_insulin = sum(d.units for d in insulin_doses) / len(insulin_doses)
+            if avg_insulin > 10:
+                recommendations["tips"].append({
+                    "category": "medication",
+                    "message": f"High average insulin dose ({avg_insulin:.1f} units). Consider reviewing with healthcare provider.",
+                    "priority": "medium"
+                })
+        
+        # General management tips
+        if len(glucose_readings) < 4:
+            recommendations["tips"].append({
+                "category": "monitoring",
+                "message": "Limited glucose readings. More frequent monitoring provides better insights.",
+                "priority": "medium"
+            })
+        
+        if time_in_target < 80:
+            recommendations["tips"].append({
+                "category": "management",
+                "message": "Focus on improving time in target range. Consider meal timing and insulin adjustments.",
+                "priority": "high"
+            })
+
+    # Generate trends
+    if include_trends and len(glucose_readings) > 1:
+        # Sort readings by timestamp
+        sorted_readings = sorted(glucose_readings, key=lambda x: x.timestamp)
+        
+        # Analyze recent vs earlier readings
+        mid_point = len(sorted_readings) // 2
+        earlier_readings = sorted_readings[:mid_point]
+        recent_readings = sorted_readings[mid_point:]
+        
+        if earlier_readings and recent_readings:
+            earlier_avg = sum(r.value for r in earlier_readings) / len(earlier_readings)
+            recent_avg = sum(r.value for r in recent_readings) / len(recent_readings)
+            
+            if recent_avg > earlier_avg + 20:
+                recommendations["trends"].append({
+                    "type": "increasing",
+                    "message": "Glucose levels are trending upward. Review recent changes in routine.",
+                    "magnitude": "moderate" if recent_avg - earlier_avg < 50 else "significant"
+                })
+            elif recent_avg < earlier_avg - 20:
+                recommendations["trends"].append({
+                    "type": "decreasing",
+                    "message": "Glucose levels are trending downward. Monitor for hypoglycemia.",
+                    "magnitude": "moderate" if earlier_avg - recent_avg < 50 else "significant"
+                })
+            else:
+                recommendations["trends"].append({
+                    "type": "stable",
+                    "message": "Glucose levels are relatively stable. Continue current management approach.",
+                    "magnitude": "stable"
+                })
+        
+        # Pattern analysis
+        if cv < 20:
+            recommendations["trends"].append({
+                "type": "pattern",
+                "message": "Excellent glucose stability detected. Your management is working well.",
+                "magnitude": "positive"
+            })
+        elif cv > 40:
+            recommendations["trends"].append({
+                "type": "pattern",
+                "message": "High glucose variability suggests inconsistent management. Focus on routine.",
+                "magnitude": "concerning"
+            })
+
+    # Generate AI insights if requested
+    if include_ai_insights:
+        ai_insights = _generate_ai_insights(glucose_readings, meals, activities, insulin_doses, current_user)
+        recommendations["ai_insights"] = ai_insights
+
+    # Add summary insights
+    if time_in_target > 80:
+        recommendations["summary"]["overall_status"] = "excellent"
+        recommendations["summary"]["status_message"] = "Great glucose control! Keep up the good work."
+    elif time_in_target > 70:
+        recommendations["summary"]["overall_status"] = "good"
+        recommendations["summary"]["status_message"] = "Good glucose control with room for improvement."
+    elif time_in_target > 50:
+        recommendations["summary"]["overall_status"] = "fair"
+        recommendations["summary"]["status_message"] = "Fair glucose control. Consider reviewing management strategies."
+    else:
+        recommendations["summary"]["overall_status"] = "needs_improvement"
+        recommendations["summary"]["status_message"] = "Glucose control needs improvement. Consider consulting healthcare provider."
+
+    recommendations["summary"]["key_metrics"] = {
+        "average_glucose": round(avg_glucose, 1),
+        "time_in_target": round(time_in_target, 1),
+        "glucose_variability_cv": round(cv, 1),
+        "glucose_range": f"{min_glucose:.0f} - {max_glucose:.0f}"
+    }
+
+    return recommendations
+
+
+def _generate_ai_insights(
+    glucose_readings: List[GlucoseReading],
+    meals: List[Meal],
+    activities: List[Activity],
+    insulin_doses: List[InsulinDose],
+    current_user: User
+) -> List[Dict[str, Any]]:
+    """
+    Generate AI-powered personalized insights based on user's data patterns.
+    Uses statistical analysis and pattern recognition to provide intelligent recommendations.
+    """
+    insights = []
+    
+    if not glucose_readings:
+        return insights
+    
+    # Analyze glucose patterns for AI insights
+    glucose_values = [r.value for r in glucose_readings]
+    glucose_timestamps = [r.timestamp for r in glucose_readings]
+    
+    # 1. Pattern Recognition: Identify daily glucose patterns
+    daily_patterns = _analyze_daily_patterns(glucose_readings)
+    if daily_patterns:
+        insights.append({
+            "type": "pattern_recognition",
+            "title": "Daily Glucose Pattern Analysis",
+            "insight": daily_patterns["insight"],
+            "confidence": daily_patterns["confidence"],
+            "action": daily_patterns["action"],
+            "priority": "medium"
+        })
+    
+    # 2. Meal-Glucose Correlation Analysis
+    meal_insights = _analyze_meal_glucose_correlation(glucose_readings, meals)
+    if meal_insights:
+        insights.extend(meal_insights)
+    
+    # 3. Activity Impact Analysis
+    activity_insights = _analyze_activity_impact(glucose_readings, activities)
+    if activity_insights:
+        insights.extend(activity_insights)
+    
+    # 4. Insulin Sensitivity Analysis
+    insulin_insights = _analyze_insulin_sensitivity(glucose_readings, insulin_doses)
+    if insulin_insights:
+        insights.extend(insulin_insights)
+    
+    # 5. Predictive Insights
+    predictive_insights = _generate_predictive_insights(glucose_readings, current_user)
+    if predictive_insights:
+        insights.extend(predictive_insights)
+    
+    return insights
+
+def _analyze_daily_patterns(glucose_readings: List[GlucoseReading]) -> Optional[Dict[str, Any]]:
+    """Analyze daily glucose patterns to identify recurring trends."""
+    if len(glucose_readings) < 7:  # Need at least a week of data
+        return None
+    
+    # Group readings by hour of day
+    hourly_patterns = defaultdict(list)
+    for reading in glucose_readings:
+        hour = reading.timestamp.hour
+        hourly_patterns[hour].append(reading.value)
+    
+    # Find patterns
+    high_hours = []
+    low_hours = []
+    
+    for hour, values in hourly_patterns.items():
+        if len(values) >= 3:  # Need at least 3 readings for pattern
+            avg = sum(values) / len(values)
+            if avg > 180:
+                high_hours.append(hour)
+            elif avg < 100:
+                low_hours.append(hour)
+    
+    if high_hours and low_hours:
+        return {
+            "insight": f"Your glucose tends to be high around {', '.join(map(str, sorted(high_hours)))}:00 and low around {', '.join(map(str, sorted(low_hours)))}:00",
+            "confidence": "high",
+            "action": "Consider adjusting meal timing or insulin dosing during these hours"
+        }
+    elif high_hours:
+        return {
+            "insight": f"Your glucose tends to be elevated around {', '.join(map(str, sorted(high_hours)))}:00",
+            "confidence": "medium",
+            "action": "Monitor your routine during these hours and consider preventive measures"
+        }
+    elif low_hours:
+        return {
+            "insight": f"Your glucose tends to be lower around {', '.join(map(str, sorted(low_hours)))}:00",
+            "confidence": "medium",
+            "action": "Be prepared for potential hypoglycemia during these hours"
+        }
+    
+    return None
+
+def _analyze_meal_glucose_correlation(glucose_readings: List[GlucoseReading], meals: List[Meal]) -> List[Dict[str, Any]]:
+    """Analyze correlation between meals and glucose changes."""
+    insights = []
+    
+    if not meals or len(glucose_readings) < 5:
+        return insights
+    
+    # Analyze meal timing and glucose response
+    meal_glucose_pairs = []
+    for meal in meals:
+        # Find glucose readings before and after meal
+        pre_meal = None
+        post_meal = None
+        
+        for reading in glucose_readings:
+            time_diff = (reading.timestamp - meal.timestamp).total_seconds() / 60
+            
+            if -30 <= time_diff <= 0 and pre_meal is None:
+                pre_meal = reading.value
+            elif 0 <= time_diff <= 120 and post_meal is None:
+                post_meal = reading.value
+        
+        if pre_meal and post_meal:
+            meal_glucose_pairs.append({
+                "meal_carbs": meal.total_carbs or 0,
+                "glucose_change": post_meal - pre_meal,
+                "meal_time": meal.timestamp.hour
+            })
+    
+    if len(meal_glucose_pairs) >= 3:
+        # Analyze carb sensitivity
+        carb_sensitivity = []
+        for pair in meal_glucose_pairs:
+            if pair["meal_carbs"] > 0:
+                sensitivity = pair["glucose_change"] / pair["meal_carbs"]
+                carb_sensitivity.append(sensitivity)
+        
+        if carb_sensitivity:
+            avg_sensitivity = sum(carb_sensitivity) / len(carb_sensitivity)
+            
+            if avg_sensitivity > 3:
+                insights.append({
+                    "type": "meal_analysis",
+                    "title": "High Carb Sensitivity Detected",
+                    "insight": f"Your glucose increases by {avg_sensitivity:.1f} mg/dl per gram of carbs",
+                    "confidence": "high",
+                    "action": "Consider reducing carb portions or adjusting insulin-to-carb ratio",
+                    "priority": "high"
+                })
+            elif avg_sensitivity < 1:
+                insights.append({
+                    "type": "meal_analysis",
+                    "title": "Low Carb Sensitivity Detected",
+                    "insight": f"Your glucose increases by {avg_sensitivity:.1f} mg/dl per gram of carbs",
+                    "confidence": "medium",
+                    "action": "You may be able to handle more carbs or need less insulin",
+                    "priority": "medium"
+                })
+    
+    return insights
+
+def _analyze_activity_impact(glucose_readings: List[GlucoseReading], activities: List[Activity]) -> List[Dict[str, Any]]:
+    """Analyze the impact of activities on glucose levels."""
+    insights = []
+    
+    if not activities or len(glucose_readings) < 5:
+        return insights
+    
+    # Analyze activity types and glucose response
+    activity_glucose_pairs = []
+    for activity in activities:
+        # Find glucose readings before and after activity
+        pre_activity = None
+        post_activity = None
+        
+        for reading in glucose_readings:
+            time_diff = (reading.timestamp - activity.timestamp).total_seconds() / 60
+            
+            if -30 <= time_diff <= 0 and pre_activity is None:
+                pre_activity = reading.value
+            elif 0 <= time_diff <= 120 and post_activity is None:
+                post_activity = reading.value
+        
+        if pre_activity and post_activity:
+            activity_glucose_pairs.append({
+                "activity_type": activity.type,
+                "intensity": activity.intensity,
+                "duration": activity.duration_min or 0,
+                "glucose_change": post_activity - pre_activity
+            })
+    
+    if len(activity_glucose_pairs) >= 3:
+        # Group by activity type
+        activity_impacts = defaultdict(list)
+        for pair in activity_glucose_pairs:
+            activity_impacts[pair["activity_type"]].append(pair["glucose_change"])
+        
+        for activity_type, changes in activity_impacts.items():
+            if len(changes) >= 2:
+                avg_change = sum(changes) / len(changes)
+                
+                if avg_change < -20:
+                    insights.append({
+                        "type": "activity_analysis",
+                        "title": f"{activity_type.title()} Lowers Your Glucose",
+                        "insight": f"{activity_type} typically lowers your glucose by {abs(avg_change):.0f} mg/dl",
+                        "confidence": "high",
+                        "action": "Consider reducing insulin or eating a snack before this activity",
+                        "priority": "medium"
+                    })
+                elif avg_change > 20:
+                    insights.append({
+                        "type": "activity_analysis",
+                        "title": f"{activity_type.title()} Raises Your Glucose",
+                        "insight": f"{activity_type} typically raises your glucose by {avg_change:.0f} mg/dl",
+                        "confidence": "medium",
+                        "action": "Monitor glucose closely during this activity",
+                        "priority": "medium"
+                    })
+    
+    return insights
+
+def _analyze_insulin_sensitivity(glucose_readings: List[GlucoseReading], insulin_doses: List[InsulinDose]) -> List[Dict[str, Any]]:
+    """Analyze insulin sensitivity patterns."""
+    insights = []
+    
+    if not insulin_doses or len(glucose_readings) < 5:
+        return insights
+    
+    # Analyze insulin effectiveness
+    insulin_glucose_pairs = []
+    for dose in insulin_doses:
+        # Find glucose readings before and after insulin
+        pre_insulin = None
+        post_insulin = None
+        
+        for reading in glucose_readings:
+            time_diff = (reading.timestamp - dose.timestamp).total_seconds() / 60
+            
+            if -30 <= time_diff <= 0 and pre_insulin is None:
+                pre_insulin = reading.value
+            elif 0 <= time_diff <= 180 and post_insulin is None:
+                post_insulin = reading.value
+        
+        if pre_insulin and post_insulin:
+            insulin_glucose_pairs.append({
+                "insulin_units": dose.units,
+                "glucose_change": post_insulin - pre_insulin,
+                "insulin_time": dose.timestamp.hour
+            })
+    
+    if len(insulin_glucose_pairs) >= 3:
+        # Calculate insulin sensitivity
+        sensitivities = []
+        for pair in insulin_glucose_pairs:
+            if pair["insulin_units"] > 0:
+                sensitivity = pair["glucose_change"] / pair["insulin_units"]
+                sensitivities.append(sensitivity)
+        
+        if sensitivities:
+            avg_sensitivity = sum(sensitivities) / len(sensitivities)
+            
+            if avg_sensitivity > -10:
+                insights.append({
+                    "type": "insulin_analysis",
+                    "title": "Low Insulin Sensitivity",
+                    "insight": f"Your insulin sensitivity is {abs(avg_sensitivity):.1f} mg/dl per unit",
+                    "confidence": "high",
+                    "action": "Consider discussing insulin resistance with your healthcare provider",
+                    "priority": "high"
+                })
+            elif avg_sensitivity < -30:
+                insights.append({
+                    "type": "insulin_analysis",
+                    "title": "High Insulin Sensitivity",
+                    "insight": f"Your insulin sensitivity is {abs(avg_sensitivity):.1f} mg/dl per unit",
+                    "confidence": "medium",
+                    "action": "Be cautious with insulin dosing to avoid hypoglycemia",
+                    "priority": "high"
+                })
+    
+    return insights
+
+def _generate_predictive_insights(glucose_readings: List[GlucoseReading], current_user: User) -> List[Dict[str, Any]]:
+    """Generate predictive insights based on historical patterns."""
+    insights = []
+    
+    if len(glucose_readings) < 10:  # Need significant historical data
+        return insights
+    
+    # Analyze recent trends
+    sorted_readings = sorted(glucose_readings, key=lambda x: x.timestamp)
+    recent_readings = sorted_readings[-7:]  # Last 7 readings
+    earlier_readings = sorted_readings[-14:-7]  # 7 readings before that
+    
+    if len(recent_readings) >= 3 and len(earlier_readings) >= 3:
+        recent_avg = sum(r.value for r in recent_readings) / len(recent_readings)
+        earlier_avg = sum(r.value for r in earlier_readings) / len(earlier_readings)
+        
+        trend = recent_avg - earlier_avg
+        
+        if trend > 30:
+            insights.append({
+                "type": "predictive",
+                "title": "Rising Glucose Trend",
+                "insight": "Your glucose levels have been trending upward recently",
+                "confidence": "medium",
+                "action": "Review your recent routine changes and consider preventive measures",
+                "priority": "medium"
+            })
+        elif trend < -30:
+            insights.append({
+                "type": "predictive",
+                "title": "Falling Glucose Trend",
+                "insight": "Your glucose levels have been trending downward recently",
+                "confidence": "medium",
+                "action": "Monitor for hypoglycemia and consider adjusting insulin doses",
+                "priority": "medium"
+            })
+    
+    # Predict potential issues based on patterns
+    glucose_values = [r.value for r in glucose_readings]
+    if len(glucose_values) >= 5:
+        recent_high_count = sum(1 for v in glucose_values[-5:] if v > 200)
+        recent_low_count = sum(1 for v in glucose_values[-5:] if v < 70)
+        
+        if recent_high_count >= 3:
+            insights.append({
+                "type": "predictive",
+                "title": "High Glucose Pattern",
+                "insight": "You've had high glucose readings in 3+ of your last 5 measurements",
+                "confidence": "high",
+                "action": "Consider reviewing your meal planning and insulin dosing",
+                "priority": "high"
+            })
+        elif recent_low_count >= 2:
+            insights.append({
+                "type": "predictive",
+                "title": "Low Glucose Pattern",
+                "insight": "You've had low glucose readings in 2+ of your last 5 measurements",
+                "confidence": "high",
+                "action": "Be prepared for hypoglycemia and consider reducing insulin doses",
+                "priority": "high"
+            })
+    
+    return insights
