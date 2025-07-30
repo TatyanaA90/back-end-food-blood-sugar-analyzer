@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.glucose_reading import GlucoseReading
+from app.models.meal import Meal
 from app.core.security import get_current_user
 from app.models.user import User
 from typing import Optional, List, Dict, Any
@@ -756,5 +757,253 @@ def glucose_events(
     
     return {
         "events": events,
+        "meta": meta
+    }
+
+@router.get("/meal-impact")
+def meal_impact(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    group_by: str = Query("time_of_day", description="Group by 'meal_type' or 'time_of_day'"),
+    pre_meal_minutes: int = Query(30, description="Minutes before meal to look for glucose reading"),
+    post_meal_minutes: int = Query(120, description="Minutes after meal to look for glucose reading"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns average glucose change after meals, grouped by meal type or time of day.
+    Analyzes glucose readings before and after meals to show impact on blood sugar.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Validate group_by parameter
+    if group_by not in ["meal_type", "time_of_day"]:
+        raise HTTPException(status_code=400, detail="group_by must be 'meal_type' or 'time_of_day'")
+
+    # Query meals for the user in the date range
+    meal_query = select(Meal).where(Meal.user_id == current_user.id)
+    if start:
+        meal_query = meal_query.where(Meal.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        meal_query = meal_query.where(Meal.timestamp <= datetime.combine(end, datetime.max.time()))
+    meals = session.exec(meal_query).all()
+    
+    # Filter valid meals with timestamps
+    valid_meals = [m for m in meals if m.timestamp is not None]
+    
+    if not valid_meals:
+        return {
+            "meal_impacts": [],
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_meal_minutes": pre_meal_minutes,
+                "post_meal_minutes": post_meal_minutes,
+                "total_meals_analyzed": 0
+            }
+        }
+
+    # Query all glucose readings for the user in the date range
+    glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    glucose_readings = session.exec(glucose_query).all()
+    
+    # Filter valid glucose readings and ensure timezone awareness
+    valid_readings = []
+    for r in glucose_readings:
+        if r.value is not None and r.timestamp is not None:
+            # Ensure reading timestamp is timezone-aware
+            reading_time = r.timestamp
+            if reading_time.tzinfo is None:
+                # If naive datetime, assume it's in UTC
+                reading_time = reading_time.replace(tzinfo=UTC)
+            elif reading_time.tzinfo != UTC:
+                # Convert to UTC if it's in a different timezone
+                reading_time = reading_time.astimezone(UTC)
+            
+            # Store the timezone-aware timestamp for comparison
+            r._timezone_aware_timestamp = reading_time
+            valid_readings.append(r)
+    
+    valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
+    
+    if not valid_readings:
+        return {
+            "meal_impacts": [],
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_meal_minutes": pre_meal_minutes,
+                "post_meal_minutes": post_meal_minutes,
+                "total_meals_analyzed": 0
+            }
+        }
+
+    # Analyze each meal
+    meal_impacts = []
+    total_meals_analyzed = 0
+    
+    for meal in valid_meals:
+        meal_time = meal.timestamp
+        # Ensure meal_time is timezone-aware and convert to UTC if needed
+        if meal_time and meal_time.tzinfo is None:
+            # If naive datetime, assume it's in UTC
+            meal_time = meal_time.replace(tzinfo=UTC)
+        elif meal_time and meal_time.tzinfo != UTC:
+            # Convert to UTC if it's in a different timezone
+            meal_time = meal_time.astimezone(UTC)
+        
+        # Find pre-meal glucose reading (closest reading within pre_meal_minutes before meal)
+        pre_meal_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp <= meal_time and (meal_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_meal_minutes:
+                if pre_meal_reading is None or reading._timezone_aware_timestamp > pre_meal_reading._timezone_aware_timestamp:
+                    pre_meal_reading = reading
+        
+        # Find post-meal glucose reading (closest reading within post_meal_minutes after meal)
+        post_meal_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp >= meal_time and (reading._timezone_aware_timestamp - meal_time).total_seconds() / 60 <= post_meal_minutes:
+                if post_meal_reading is None or reading._timezone_aware_timestamp < post_meal_reading._timezone_aware_timestamp:
+                    post_meal_reading = reading
+        
+        # Only analyze if we have both pre and post readings
+        if pre_meal_reading and post_meal_reading:
+            glucose_change = post_meal_reading.value - pre_meal_reading.value
+            
+            # Determine group based on group_by parameter
+            if group_by == "meal_type":
+                # Since Meal model doesn't have meal_type field, we'll derive it from description or time
+                if meal.description:
+                    desc_lower = meal.description.lower()
+                    if any(word in desc_lower for word in ["breakfast", "morning", "cereal", "toast", "eggs"]):
+                        group = "breakfast"
+                    elif any(word in desc_lower for word in ["lunch", "noon", "sandwich", "salad"]):
+                        group = "lunch"
+                    elif any(word in desc_lower for word in ["dinner", "evening", "supper", "pasta", "meat"]):
+                        group = "dinner"
+                    elif any(word in desc_lower for word in ["snack", "coffee", "tea", "fruit"]):
+                        group = "snack"
+                    else:
+                        # Fall back to time-based grouping
+                        hour = meal_time.hour
+                        if 5 <= hour < 11:
+                            group = "breakfast"
+                        elif 11 <= hour < 16:
+                            group = "lunch"
+                        elif 16 <= hour < 21:
+                            group = "dinner"
+                        else:
+                            group = "snack"
+                else:
+                    # No description, use time-based grouping
+                    hour = meal_time.hour
+                    if 5 <= hour < 11:
+                        group = "breakfast"
+                    elif 11 <= hour < 16:
+                        group = "lunch"
+                    elif 16 <= hour < 21:
+                        group = "dinner"
+                    else:
+                        group = "snack"
+            else:  # time_of_day
+                hour = meal_time.hour
+                if 5 <= hour < 11:
+                    group = "breakfast"
+                elif 11 <= hour < 16:
+                    group = "lunch"
+                elif 16 <= hour < 21:
+                    group = "dinner"
+                else:
+                    group = "snack"
+            
+            meal_impacts.append({
+                "group": group,
+                "glucose_change": glucose_change,
+                "pre_meal_glucose": pre_meal_reading.value,
+                "post_meal_glucose": post_meal_reading.value,
+                "meal_timestamp": meal_time.isoformat(),
+                "pre_meal_timestamp": pre_meal_reading._timezone_aware_timestamp.isoformat(),
+                "post_meal_timestamp": post_meal_reading._timezone_aware_timestamp.isoformat()
+            })
+            total_meals_analyzed += 1
+    
+    # Group and calculate statistics
+    grouped_impacts = {}
+    for impact in meal_impacts:
+        group = impact["group"]
+        if group not in grouped_impacts:
+            grouped_impacts[group] = []
+        grouped_impacts[group].append(impact)
+    
+    # Calculate averages for each group
+    result_impacts = []
+    for group, impacts in grouped_impacts.items():
+        glucose_changes = [impact["glucose_change"] for impact in impacts]
+        pre_meal_values = [impact["pre_meal_glucose"] for impact in impacts]
+        post_meal_values = [impact["post_meal_glucose"] for impact in impacts]
+        
+        avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
+        avg_pre_meal = sum(pre_meal_values) / len(pre_meal_values)
+        avg_post_meal = sum(post_meal_values) / len(post_meal_values)
+        
+        # Calculate standard deviation
+        if len(glucose_changes) > 1:
+            mean_change = sum(glucose_changes) / len(glucose_changes)
+            variance = sum((x - mean_change) ** 2 for x in glucose_changes) / len(glucose_changes)
+            std_dev_change = variance ** 0.5
+        else:
+            std_dev_change = 0.0
+        
+        result_impacts.append({
+            "group": group,
+            "avg_glucose_change": round(avg_glucose_change, 2),
+            "num_meals": len(impacts),
+            "avg_pre_meal": round(avg_pre_meal, 2),
+            "avg_post_meal": round(avg_post_meal, 2),
+            "std_dev_change": round(std_dev_change, 2)
+        })
+    
+    # Sort by group name for consistent output
+    result_impacts.sort(key=lambda x: x["group"])
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "group_by": group_by,
+        "pre_meal_minutes": pre_meal_minutes,
+        "post_meal_minutes": post_meal_minutes,
+        "total_meals_analyzed": total_meals_analyzed
+    }
+    
+    return {
+        "meal_impacts": result_impacts,
         "meta": meta
     }
