@@ -789,4 +789,165 @@ def test_meal_impact_no_data():
     
     data = response.json()
     assert len(data["meal_impacts"]) == 0  # No meal impacts should be found
-    assert data["meta"]["total_meals_analyzed"] == 0 
+    assert data["meta"]["total_meals_analyzed"] == 0
+
+
+def test_activity_impact_endpoint():
+    """Test activity-impact endpoint with basic functionality."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"activityimpacttest{unique_id}@example.com"
+    username = f"activityimpacttestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Activity Impact Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create test activities and glucose readings with UTC timezone
+    activity_time = datetime(2025, 7, 29, 14, 0, 0, tzinfo=UTC)
+    
+    # Create activity
+    client.post("/activities", json={
+        "type": "running",
+        "intensity": "high",
+        "duration_min": 30,
+        "start_time": activity_time.isoformat()
+    }, headers=headers)
+    
+    # Create glucose readings (30 min before, 60 min after)
+    client.post("/glucose-readings", json={
+        "value": 120,
+        "timestamp": (activity_time - timedelta(minutes=30)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    client.post("/glucose-readings", json={
+        "value": 90,
+        "timestamp": (activity_time + timedelta(minutes=60)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    # Test activity impact endpoint
+    response = client.get("/analytics/activity-impact", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert "activity_impacts" in data
+    assert "meta" in data
+    assert len(data["activity_impacts"]) >= 1
+    
+    # Check meta information
+    meta = data["meta"]
+    assert meta["group_by"] == "activity_type"
+    assert meta["pre_activity_minutes"] == 30
+    assert meta["post_activity_minutes"] == 120
+    assert meta["total_activities_analyzed"] >= 1
+    
+    # Check activity impact data
+    running_impact = next((impact for impact in data["activity_impacts"] if impact["group"] == "running"), None)
+    assert running_impact is not None
+    assert running_impact["avg_glucose_change"] == -30.0  # 90 - 120
+    assert running_impact["num_activities"] == 1
+    # Allow for different readings being selected
+    assert abs(running_impact["avg_pre_activity"] - 120.0) <= 20.0  # Allow 20 mg/dl tolerance
+    assert abs(running_impact["avg_post_activity"] - 90.0) <= 20.0  # Allow 20 mg/dl tolerance
+
+
+def test_activity_impact_custom_parameters():
+    """Test activity-impact endpoint with custom parameters."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"activityimpactcustomtest{unique_id}@example.com"
+    username = f"activityimpactcustomtestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Activity Impact Custom Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create test activity and glucose readings with custom timing (ensure UTC timezone)
+    activity_time = datetime(2025, 7, 29, 16, 0, 0, tzinfo=UTC)
+    client.post("/activities", json={
+        "type": "walking",
+        "intensity": "low",
+        "duration_min": 45,
+        "start_time": activity_time.isoformat()
+    }, headers=headers)
+    
+    # Create glucose readings with custom timing (20 min before, 90 min after)
+    client.post("/glucose-readings", json={
+        "value": 140,
+        "timestamp": (activity_time - timedelta(minutes=20)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    client.post("/glucose-readings", json={
+        "value": 130,
+        "timestamp": (activity_time + timedelta(minutes=90)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    # Test with custom parameters
+    response = client.get("/analytics/activity-impact?pre_activity_minutes=25&post_activity_minutes=100", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["activity_impacts"]) >= 1
+    
+    # Check meta has custom parameters
+    meta = data["meta"]
+    assert meta["pre_activity_minutes"] == 25
+    assert meta["post_activity_minutes"] == 100
+    assert meta["total_activities_analyzed"] >= 1
+
+
+def test_activity_impact_no_data():
+    """Test activity-impact endpoint when no activities or glucose readings exist."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"activityimpactnonetest{unique_id}@example.com"
+    username = f"activityimpactnonetestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Activity Impact None Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Test activity impact endpoint with no data
+    response = client.get("/analytics/activity-impact", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["activity_impacts"]) == 0  # No activity impacts should be found
+    assert data["meta"]["total_activities_analyzed"] == 0 

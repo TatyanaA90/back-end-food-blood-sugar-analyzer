@@ -3,6 +3,7 @@ from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.glucose_reading import GlucoseReading
 from app.models.meal import Meal
+from app.models.activity import Activity
 from app.core.security import get_current_user
 from app.models.user import User
 from typing import Optional, List, Dict, Any
@@ -1005,5 +1006,235 @@ def meal_impact(
     
     return {
         "meal_impacts": result_impacts,
+        "meta": meta
+    }
+
+
+@router.get("/activity-impact")
+def activity_impact(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    group_by: str = Query("activity_type", description="Group by 'activity_type' or 'intensity'"),
+    pre_activity_minutes: int = Query(30, description="Minutes before activity to look for glucose reading"),
+    post_activity_minutes: int = Query(120, description="Minutes after activity to look for glucose reading"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns average glucose change after activities, grouped by activity type or intensity.
+    Analyzes glucose readings before and after activities to show impact on blood sugar.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Validate group_by parameter
+    if group_by not in ["activity_type", "intensity"]:
+        raise HTTPException(status_code=400, detail="group_by must be 'activity_type' or 'intensity'")
+
+    # Query activities for the user in the date range
+    activity_query = select(Activity).where(Activity.user_id == current_user.id)
+    if start:
+        activity_query = activity_query.where(Activity.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        activity_query = activity_query.where(Activity.timestamp <= datetime.combine(end, datetime.max.time()))
+    activities = session.exec(activity_query).all()
+    
+    # Filter valid activities with timestamps
+    valid_activities = [a for a in activities if a.timestamp is not None]
+    
+    if not valid_activities:
+        return {
+            "activity_impacts": [],
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_activity_minutes": pre_activity_minutes,
+                "post_activity_minutes": post_activity_minutes,
+                "total_activities_analyzed": 0
+            }
+        }
+
+    # Query all glucose readings for the user in the date range
+    glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    glucose_readings = session.exec(glucose_query).all()
+    
+    # Filter valid glucose readings and ensure timezone awareness
+    valid_readings = []
+    for reading in glucose_readings:
+        if reading.value is not None and reading.timestamp is not None:
+            # Ensure reading timestamp is timezone-aware
+            reading_time = reading.timestamp
+            if reading_time.tzinfo is None:
+                # If naive datetime, assume it's in UTC
+                reading_time = reading_time.replace(tzinfo=UTC)
+            elif reading_time.tzinfo != UTC:
+                # Convert to UTC if it's in a different timezone
+                reading_time = reading_time.astimezone(UTC)
+            
+            # Store the timezone-aware timestamp for comparison
+            reading._timezone_aware_timestamp = reading_time
+            valid_readings.append(reading)
+    
+    valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
+    
+    if not valid_readings:
+        return {
+            "activity_impacts": [],
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_activity_minutes": pre_activity_minutes,
+                "post_activity_minutes": post_activity_minutes,
+                "total_activities_analyzed": 0
+            }
+        }
+
+    # Analyze each activity
+    activity_impacts = []
+    total_activities_analyzed = 0
+    
+    for activity in valid_activities:
+        # Use start_time if available, otherwise fall back to timestamp
+        activity_time = activity.start_time or activity.timestamp
+        # Ensure activity_time is timezone-aware and convert to UTC if needed
+        if activity_time and activity_time.tzinfo is None:
+            # If naive datetime, assume it's in UTC
+            activity_time = activity_time.replace(tzinfo=UTC)
+        elif activity_time and activity_time.tzinfo != UTC:
+            # Convert to UTC if it's in a different timezone
+            activity_time = activity_time.astimezone(UTC)
+        
+        # Find pre-activity glucose reading (closest reading within pre_activity_minutes before activity)
+        pre_activity_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp <= activity_time and (activity_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_activity_minutes:
+                if pre_activity_reading is None or reading._timezone_aware_timestamp > pre_activity_reading._timezone_aware_timestamp:
+                    pre_activity_reading = reading
+        
+        # Find post-activity glucose reading (closest reading within post_activity_minutes after activity)
+        post_activity_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp >= activity_time and (reading._timezone_aware_timestamp - activity_time).total_seconds() / 60 <= post_activity_minutes:
+                if post_activity_reading is None or reading._timezone_aware_timestamp < post_activity_reading._timezone_aware_timestamp:
+                    post_activity_reading = reading
+        
+        if pre_activity_reading and post_activity_reading:
+            glucose_change = post_activity_reading.value - pre_activity_reading.value
+            
+            # Determine group based on group_by parameter
+            if group_by == "activity_type":
+                # Use activity type from the activity record
+                group = activity.type.lower() if activity.type else "unknown"
+            else:  # intensity
+                # Group by intensity level
+                if activity.intensity:
+                    intensity_lower = activity.intensity.lower()
+                    if any(word in intensity_lower for word in ["low", "light", "easy"]):
+                        group = "low"
+                    elif any(word in intensity_lower for word in ["medium", "moderate", "mod"]):
+                        group = "medium"
+                    elif any(word in intensity_lower for word in ["high", "intense", "vigorous"]):
+                        group = "high"
+                    else:
+                        group = "unknown"
+                else:
+                    group = "unknown"
+            
+            activity_impacts.append({
+                "group": group,
+                "glucose_change": glucose_change,
+                "pre_activity_glucose": pre_activity_reading.value,
+                "post_activity_glucose": post_activity_reading.value,
+                "activity_timestamp": activity_time.isoformat(),
+                "pre_activity_timestamp": pre_activity_reading._timezone_aware_timestamp.isoformat(),
+                "post_activity_timestamp": post_activity_reading._timezone_aware_timestamp.isoformat(),
+                "activity_duration": activity.duration_min,
+                "calories_burned": activity.calories_burned
+            })
+            total_activities_analyzed += 1
+    
+    # Group and calculate statistics
+    grouped_impacts = {}
+    for impact in activity_impacts:
+        group = impact["group"]
+        if group not in grouped_impacts:
+            grouped_impacts[group] = []
+        grouped_impacts[group].append(impact)
+    
+    # Calculate averages for each group
+    result_impacts = []
+    for group, impacts in grouped_impacts.items():
+        glucose_changes = [impact["glucose_change"] for impact in impacts]
+        pre_activity_values = [impact["pre_activity_glucose"] for impact in impacts]
+        post_activity_values = [impact["post_activity_glucose"] for impact in impacts]
+        
+        avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
+        avg_pre_activity = sum(pre_activity_values) / len(pre_activity_values)
+        avg_post_activity = sum(post_activity_values) / len(post_activity_values)
+        
+        # Calculate standard deviation
+        if len(glucose_changes) > 1:
+            mean_change = sum(glucose_changes) / len(glucose_changes)
+            variance = sum((x - mean_change) ** 2 for x in glucose_changes) / len(glucose_changes)
+            std_dev_change = variance ** 0.5
+        else:
+            std_dev_change = 0.0
+        
+        # Calculate average duration and calories for this group
+        avg_duration = sum(impact["activity_duration"] for impact in impacts if impact["activity_duration"]) / len([impact for impact in impacts if impact["activity_duration"]]) if any(impact["activity_duration"] for impact in impacts) else None
+        avg_calories = sum(impact["calories_burned"] for impact in impacts if impact["calories_burned"]) / len([impact for impact in impacts if impact["calories_burned"]]) if any(impact["calories_burned"] for impact in impacts) else None
+        
+        result_impacts.append({
+            "group": group,
+            "avg_glucose_change": round(avg_glucose_change, 2),
+            "num_activities": len(impacts),
+            "avg_pre_activity": round(avg_pre_activity, 2),
+            "avg_post_activity": round(avg_post_activity, 2),
+            "std_dev_change": round(std_dev_change, 2),
+            "avg_duration_minutes": round(avg_duration, 1) if avg_duration else None,
+            "avg_calories_burned": round(avg_calories, 1) if avg_calories else None
+        })
+    
+    # Sort by group name for consistent output
+    result_impacts.sort(key=lambda x: x["group"])
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "group_by": group_by,
+        "pre_activity_minutes": pre_activity_minutes,
+        "post_activity_minutes": post_activity_minutes,
+        "total_activities_analyzed": total_activities_analyzed
+    }
+    
+    return {
+        "activity_impacts": result_impacts,
         "meta": meta
     }

@@ -9,7 +9,9 @@ class Activity(Base, table=True):
     type: str
     intensity: Optional[str] = None
     duration_min: Optional[int] = None
-    timestamp: Optional[datetime] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    timestamp: Optional[datetime] = None  
     note: Optional[str] = None
     calories_burned: Optional[float] = None
 

@@ -48,7 +48,9 @@ class ActivityBase(BaseModel):
     type: str
     intensity: Optional[str] = None
     duration_min: Optional[int] = None
-    timestamp: Optional[datetime] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    timestamp: Optional[datetime] = None 
     note: Optional[str] = None
 
 class ActivityCreate(ActivityBase):

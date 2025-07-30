@@ -41,14 +41,26 @@ def can_edit_activity(activity: Activity, user: User) -> bool:
 @router.post("/", response_model=ActivityReadDetail, status_code=status.HTTP_201_CREATED)
 def create_activity(activity_in: ActivityCreate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     weight_kg = current_user.weight if current_user.weight else 70.0
+    
+    # Auto-calculate duration if start_time and end_time are provided
+    duration_min = activity_in.duration_min
+    if activity_in.start_time and activity_in.end_time:
+        if activity_in.start_time >= activity_in.end_time:
+            raise HTTPException(status_code=400, detail="Start time must be before end time")
+        duration_diff = activity_in.end_time - activity_in.start_time
+        duration_min = int(duration_diff.total_seconds() / 60)
+    
     met = get_met_value(activity_in.type, activity_in.intensity)
-    calories = calculate_calories_burned(met, weight_kg, activity_in.duration_min)
+    calories = calculate_calories_burned(met, weight_kg, duration_min)
+    
     assert current_user.id is not None, "User ID must not be None"
     activity = Activity(
         user_id=int(current_user.id),
         type=activity_in.type,
         intensity=activity_in.intensity,
-        duration_min=activity_in.duration_min,
+        duration_min=duration_min,
+        start_time=activity_in.start_time,
+        end_time=activity_in.end_time,
         timestamp=activity_in.timestamp or datetime.now(UTC),
         note=activity_in.note,
         calories_burned=calories
@@ -64,6 +76,20 @@ def list_activities(session: Session = Depends(get_session), current_user: User 
         activities = session.exec(select(Activity)).all()
     else:
         activities = session.exec(select(Activity).where(Activity.user_id == current_user.id)).all()
+    return [ActivityReadBasic.model_validate(a) for a in activities]
+
+@router.get("/previous-activities", response_model=List[ActivityReadBasic])
+def get_previous_activities(
+    limit: int = 10,
+    session: Session = Depends(get_session), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get previous activities for auto-save suggestions.
+    Returns the most recent activities for the current user.
+    """
+    query = select(Activity).where(Activity.user_id == current_user.id).order_by(Activity.created_at.desc()).limit(limit)
+    activities = session.exec(query).all()
     return [ActivityReadBasic.model_validate(a) for a in activities]
 
 @router.get("/{activity_id}", response_model=ActivityReadDetail)
@@ -82,13 +108,23 @@ def update_activity(activity_id: int, activity_in: ActivityUpdate, session: Sess
         raise HTTPException(status_code=404, detail="Activity not found")
     if not can_edit_activity(activity, current_user):
         raise HTTPException(status_code=403, detail="Not authorized")
+    
     # Update fields
     for field, value in activity_in.model_dump(exclude_unset=True).items():
         setattr(activity, field, value)
+    
+    # Auto-calculate duration if start_time and end_time are provided
+    if activity.start_time and activity.end_time:
+        if activity.start_time >= activity.end_time:
+            raise HTTPException(status_code=400, detail="Start time must be before end time")
+        duration_diff = activity.end_time - activity.start_time
+        activity.duration_min = int(duration_diff.total_seconds() / 60)
+    
     # Recalculate calories if relevant fields changed
     weight_kg = current_user.weight if current_user.weight else 70.0
     met = get_met_value(activity.type, activity.intensity)
     activity.calories_burned = calculate_calories_burned(met, weight_kg, activity.duration_min)
+    
     session.commit()
     session.refresh(activity)
     return ActivityReadDetail.model_validate(activity)
