@@ -29,7 +29,7 @@
     - [x] Implement /analytics/glucose-events endpoint: lists hypo/hyperglycemia events with start/end times and durations, for event timeline visualizations.
     - [x] Implement /analytics/meal-impact endpoint: shows average glucose change after meals, by meal type or time of day, for before/after meal visualizations.
     - [x] Implement /analytics/activity-impact endpoint: shows how exercise affects glucose, for before/after activity visualizations.
-    - [ ] Implement /analytics/insulin-glucose-correlation endpoint: analyzes relationship between insulin doses and glucose changes, for scatter plot visualizations.
+    - [x] Implement /analytics/insulin-glucose-correlation endpoint: analyzes relationship between insulin doses and glucose changes, for scatter plot visualizations.
     - [ ] Implement /analytics/recommendations endpoint: provides actionable tips and alerts based on recent data and trends.
 - [x] Write comprehensive tests for all endpoints.
     - [x] Create separate test files for each router/feature

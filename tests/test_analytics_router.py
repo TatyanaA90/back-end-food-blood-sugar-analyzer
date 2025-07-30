@@ -950,4 +950,172 @@ def test_activity_impact_no_data():
     
     data = response.json()
     assert len(data["activity_impacts"]) == 0  # No activity impacts should be found
-    assert data["meta"]["total_activities_analyzed"] == 0 
+    assert data["meta"]["total_activities_analyzed"] == 0
+
+
+def test_insulin_glucose_correlation_endpoint():
+    """Test insulin-glucose-correlation endpoint with basic functionality."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"insulincorrelationtest{unique_id}@example.com"
+    username = f"insulincorrelationtestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Insulin Correlation Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create test insulin doses and glucose readings with UTC timezone
+    insulin_time = datetime(2025, 7, 29, 14, 0, 0, tzinfo=UTC)
+    
+    # Create insulin dose
+    client.post("/insulin-doses", json={
+        "units": 3.0,
+        "timestamp": insulin_time.isoformat()
+    }, headers=headers)
+    
+    # Create glucose readings (30 min before, 90 min after)
+    client.post("/glucose-readings", json={
+        "value": 180,
+        "timestamp": (insulin_time - timedelta(minutes=30)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    client.post("/glucose-readings", json={
+        "value": 120,
+        "timestamp": (insulin_time + timedelta(minutes=90)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    # Test insulin-glucose correlation endpoint
+    response = client.get("/analytics/insulin-glucose-correlation", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert "correlations" in data
+    assert "overall_analysis" in data
+    assert "meta" in data
+    assert len(data["correlations"]) >= 1
+    
+    # Check meta information
+    meta = data["meta"]
+    assert meta["group_by"] == "dose_range"
+    assert meta["pre_insulin_minutes"] == 30
+    assert meta["post_insulin_minutes"] == 180
+    
+    # Check overall analysis
+    overall = data["overall_analysis"]
+    assert overall["total_doses_analyzed"] >= 1
+    assert "recommendations" in overall
+    
+    # Check correlation data
+    correlation = data["correlations"][0]
+    assert "group" in correlation
+    assert "avg_glucose_change" in correlation
+    assert "avg_insulin_units" in correlation
+    assert "insulin_sensitivity" in correlation
+    assert "effectiveness_score" in correlation
+    assert "correlation_coefficient" in correlation
+    
+    # Verify glucose change calculation (120 - 180 = -60)
+    assert correlation["avg_glucose_change"] == -60.0
+    assert correlation["avg_insulin_units"] == 3.0
+    assert correlation["insulin_sensitivity"] == -20.0  # -60 / 3
+
+
+def test_insulin_glucose_correlation_custom_parameters():
+    """Test insulin-glucose-correlation endpoint with custom parameters."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"insulincorrelationcustomtest{unique_id}@example.com"
+    username = f"insulincorrelationcustomtestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Insulin Correlation Custom Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Create test insulin dose and glucose readings with custom timing (ensure UTC timezone)
+    insulin_time = datetime(2025, 7, 29, 16, 0, 0, tzinfo=UTC)
+    client.post("/insulin-doses", json={
+        "units": 2.5,
+        "timestamp": insulin_time.isoformat()
+    }, headers=headers)
+    
+    # Create glucose readings with custom timing (20 min before, 120 min after)
+    client.post("/glucose-readings", json={
+        "value": 200,
+        "timestamp": (insulin_time - timedelta(minutes=20)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    client.post("/glucose-readings", json={
+        "value": 150,
+        "timestamp": (insulin_time + timedelta(minutes=120)).isoformat(),
+        "unit": "mg/dl"
+    }, headers=headers)
+    
+    # Test with custom parameters
+    response = client.get("/analytics/insulin-glucose-correlation?pre_insulin_minutes=25&post_insulin_minutes=150", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["correlations"]) >= 1
+    
+    # Check meta has custom parameters
+    meta = data["meta"]
+    assert meta["pre_insulin_minutes"] == 25
+    assert meta["post_insulin_minutes"] == 150
+    assert data["overall_analysis"]["total_doses_analyzed"] >= 1
+
+
+def test_insulin_glucose_correlation_no_data():
+    """Test insulin-glucose-correlation endpoint when no insulin doses or glucose readings exist."""
+    # Generate unique identifiers for this test run
+    unique_id = str(uuid.uuid4())[:8]
+    email = f"insulincorrelationnonetest{unique_id}@example.com"
+    username = f"insulincorrelationnonetestuser{unique_id}"
+    
+    # Register and login user
+    client.post("/users", json={
+        "email": email,
+        "username": username,
+        "password": "testpassword",
+        "name": "Insulin Correlation None Test User"
+    })
+    login = client.post("/login", data={
+        "username": username,
+        "password": "testpassword"
+    })
+    assert login.status_code == 200  # Ensure login succeeded
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # Test insulin-glucose correlation endpoint with no data
+    response = client.get("/analytics/insulin-glucose-correlation", headers=headers)
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert len(data["correlations"]) == 0  # No correlations should be found
+    assert data["overall_analysis"]["total_doses_analyzed"] == 0
+    assert "No insulin doses found" in data["overall_analysis"]["recommendations"][0] 

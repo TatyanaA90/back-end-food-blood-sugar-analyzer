@@ -4,6 +4,7 @@ from app.core.database import get_session
 from app.models.glucose_reading import GlucoseReading
 from app.models.meal import Meal
 from app.models.activity import Activity
+from app.models.insulin_dose import InsulinDose
 from app.core.security import get_current_user
 from app.models.user import User
 from typing import Optional, List, Dict, Any
@@ -1236,5 +1237,338 @@ def activity_impact(
     
     return {
         "activity_impacts": result_impacts,
+        "meta": meta
+    }
+
+
+@router.get("/insulin-glucose-correlation")
+def insulin_glucose_correlation(
+    window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
+    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    group_by: str = Query("dose_range", description="Group by 'dose_range', 'time_of_day', or 'insulin_effectiveness'"),
+    pre_insulin_minutes: int = Query(30, description="Minutes before insulin to look for glucose reading"),
+    post_insulin_minutes: int = Query(180, description="Minutes after insulin to look for glucose reading"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Returns correlation analysis between insulin doses and glucose changes.
+    Analyzes how insulin doses affect glucose levels for personalized insights.
+    """
+    # Determine date range based on window
+    now = datetime.now(UTC)
+    if window == "day":
+        start = now.date()
+        end = now.date()
+    elif window == "week":
+        start = (now - timedelta(days=6)).date()
+        end = now.date()
+    elif window == "month":
+        start = (now - timedelta(days=29)).date()
+        end = now.date()
+    elif window == "3months":
+        start = (now - timedelta(days=89)).date()
+        end = now.date()
+    elif window == "custom":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="For custom window, start_date and end_date are required.")
+        start = start_date
+        end = end_date
+    else:
+        start = start_date
+        end = end_date
+
+    # Validate group_by parameter
+    if group_by not in ["dose_range", "time_of_day", "insulin_effectiveness"]:
+        raise HTTPException(status_code=400, detail="group_by must be 'dose_range', 'time_of_day', or 'insulin_effectiveness'")
+
+    # Query insulin doses for the user in the date range
+    insulin_query = select(InsulinDose).where(InsulinDose.user_id == current_user.id)
+    if start:
+        insulin_query = insulin_query.where(InsulinDose.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        insulin_query = insulin_query.where(InsulinDose.timestamp <= datetime.combine(end, datetime.max.time()))
+    insulin_doses = session.exec(insulin_query).all()
+    
+    # Filter valid insulin doses with timestamps
+    valid_doses = [d for d in insulin_doses if d.timestamp is not None and d.units > 0]
+    
+    if not valid_doses:
+        return {
+            "correlations": [],
+            "overall_analysis": {
+                "total_doses_analyzed": 0,
+                "avg_insulin_sensitivity": None,
+                "most_effective_dose_range": None,
+                "recommendations": [f"No insulin doses found in the specified time range. Found {len(insulin_doses)} total doses, {len([d for d in insulin_doses if d.timestamp is not None])} with timestamps, {len([d for d in insulin_doses if d.units > 0])} with valid units"]
+            },
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_insulin_minutes": pre_insulin_minutes,
+                "post_insulin_minutes": post_insulin_minutes
+            }
+        }
+
+    # Query all glucose readings for the user in the date range
+    glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
+    if start:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
+    if end:
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
+    glucose_readings = session.exec(glucose_query).all()
+    
+    # Filter valid glucose readings and ensure timezone awareness
+    valid_readings = []
+    for reading in glucose_readings:
+        if reading.value is not None and reading.timestamp is not None:
+            # Ensure reading timestamp is timezone-aware
+            reading_time = reading.timestamp
+            if reading_time.tzinfo is None:
+                # If naive datetime, assume it's in UTC
+                reading_time = reading_time.replace(tzinfo=UTC)
+            elif reading_time.tzinfo != UTC:
+                # Convert to UTC if it's in a different timezone
+                reading_time = reading_time.astimezone(UTC)
+            
+            # Store the timezone-aware timestamp for comparison
+            reading._timezone_aware_timestamp = reading_time
+            valid_readings.append(reading)
+    
+    valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
+    
+    if not valid_readings:
+        return {
+            "correlations": [],
+            "overall_analysis": {
+                "total_doses_analyzed": 0,
+                "avg_insulin_sensitivity": None,
+                "most_effective_dose_range": None,
+                "recommendations": ["No glucose readings found in the specified time range"]
+            },
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_insulin_minutes": pre_insulin_minutes,
+                "post_insulin_minutes": post_insulin_minutes
+            }
+        }
+
+    # Analyze each insulin dose
+    dose_glucose_pairs = []
+    total_doses_analyzed = 0
+    
+    for dose in valid_doses:
+        dose_time = dose.timestamp
+        # Ensure dose_time is timezone-aware and convert to UTC if needed
+        if dose_time and dose_time.tzinfo is None:
+            # If naive datetime, assume it's in UTC
+            dose_time = dose_time.replace(tzinfo=UTC)
+        elif dose_time and dose_time.tzinfo != UTC:
+            # Convert to UTC if it's in a different timezone
+            dose_time = dose_time.astimezone(UTC)
+        
+        # Find pre-insulin glucose reading (closest reading within pre_insulin_minutes before dose)
+        pre_insulin_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp <= dose_time and (dose_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_insulin_minutes:
+                if pre_insulin_reading is None or reading._timezone_aware_timestamp > pre_insulin_reading._timezone_aware_timestamp:
+                    pre_insulin_reading = reading
+        
+        # Find post-insulin glucose reading (closest reading within post_insulin_minutes after dose)
+        post_insulin_reading = None
+        for reading in valid_readings:
+            if reading._timezone_aware_timestamp >= dose_time and (reading._timezone_aware_timestamp - dose_time).total_seconds() / 60 <= post_insulin_minutes:
+                if post_insulin_reading is None or reading._timezone_aware_timestamp < post_insulin_reading._timezone_aware_timestamp:
+                    post_insulin_reading = reading
+        
+        if pre_insulin_reading and post_insulin_reading:
+            glucose_change = post_insulin_reading.value - pre_insulin_reading.value
+            insulin_sensitivity = glucose_change / dose.units if dose.units > 0 else 0
+            
+            # Calculate response time (minutes from dose to post-insulin reading)
+            response_time = (post_insulin_reading._timezone_aware_timestamp - dose_time).total_seconds() / 60
+            
+            # Determine group based on group_by parameter
+            if group_by == "dose_range":
+                if dose.units <= 2:
+                    group = "0-2_units"
+                elif dose.units <= 5:
+                    group = "2-5_units"
+                else:
+                    group = "5+_units"
+            elif group_by == "time_of_day":
+                hour = dose_time.hour
+                if 6 <= hour < 12:
+                    group = "morning"
+                elif 12 <= hour < 18:
+                    group = "afternoon"
+                elif 18 <= hour < 24:
+                    group = "evening"
+                else:
+                    group = "night"
+            else:  # insulin_effectiveness
+                if insulin_sensitivity <= -30:
+                    group = "high_sensitivity"
+                elif insulin_sensitivity <= -15:
+                    group = "medium_sensitivity"
+                else:
+                    group = "low_sensitivity"
+            
+            dose_glucose_pairs.append({
+                "group": group,
+                "insulin_units": dose.units,
+                "glucose_change": glucose_change,
+                "insulin_sensitivity": insulin_sensitivity,
+                "pre_insulin_glucose": pre_insulin_reading.value,
+                "post_insulin_glucose": post_insulin_reading.value,
+                "response_time_minutes": response_time,
+                "dose_timestamp": dose_time.isoformat(),
+                "pre_glucose_timestamp": pre_insulin_reading._timezone_aware_timestamp.isoformat(),
+                "post_glucose_timestamp": post_insulin_reading._timezone_aware_timestamp.isoformat()
+            })
+            total_doses_analyzed += 1
+    
+    if not dose_glucose_pairs:
+        return {
+            "correlations": [],
+            "overall_analysis": {
+                "total_doses_analyzed": 0,
+                "avg_insulin_sensitivity": None,
+                "most_effective_dose_range": None,
+                "recommendations": ["No valid insulin-glucose pairs found"]
+            },
+            "meta": {
+                "start_date": start.isoformat() if start else None,
+                "end_date": end.isoformat() if end else None,
+                "group_by": group_by,
+                "pre_insulin_minutes": pre_insulin_minutes,
+                "post_insulin_minutes": post_insulin_minutes
+            }
+        }
+
+    # Group and calculate statistics
+    grouped_pairs = {}
+    for pair in dose_glucose_pairs:
+        group = pair["group"]
+        if group not in grouped_pairs:
+            grouped_pairs[group] = []
+        grouped_pairs[group].append(pair)
+    
+    # Calculate correlations for each group
+    correlations = []
+    all_sensitivities = []
+    
+    for group, pairs in grouped_pairs.items():
+        # Allow single pairs for basic analysis, but note limited correlation
+        if len(pairs) < 1:
+            continue
+        
+        insulin_units = [pair["insulin_units"] for pair in pairs]
+        glucose_changes = [pair["glucose_change"] for pair in pairs]
+        sensitivities = [pair["insulin_sensitivity"] for pair in pairs]
+        response_times = [pair["response_time_minutes"] for pair in pairs]
+        
+        # Calculate averages
+        avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
+        avg_insulin_units = sum(insulin_units) / len(insulin_units)
+        avg_sensitivity = sum(sensitivities) / len(sensitivities)
+        avg_response_time = sum(response_times) / len(response_times)
+        
+        # Calculate correlation coefficient (simplified Pearson correlation)
+        if len(pairs) > 1:
+            # Calculate correlation between insulin units and glucose change
+            mean_units = sum(insulin_units) / len(insulin_units)
+            mean_change = sum(glucose_changes) / len(glucose_changes)
+            
+            numerator = sum((u - mean_units) * (g - mean_change) for u, g in zip(insulin_units, glucose_changes))
+            denominator_units = sum((u - mean_units) ** 2 for u in insulin_units)
+            denominator_change = sum((g - mean_change) ** 2 for g in glucose_changes)
+            
+            if denominator_units > 0 and denominator_change > 0:
+                correlation_coefficient = numerator / (denominator_units * denominator_change) ** 0.5
+            else:
+                correlation_coefficient = 0.0
+        else:
+            # For single pairs, correlation is not meaningful
+            correlation_coefficient = None
+        
+        # Calculate standard deviation
+        if len(glucose_changes) > 1:
+            mean_change = sum(glucose_changes) / len(glucose_changes)
+            variance = sum((x - mean_change) ** 2 for x in glucose_changes) / len(glucose_changes)
+            std_dev_change = variance ** 0.5
+        else:
+            std_dev_change = 0.0
+        
+        # Calculate effectiveness score (0-1, higher is better)
+        # Based on glucose drop, consistency, and response time
+        glucose_drop_score = min(abs(avg_glucose_change) / 50.0, 1.0)  # Normalize to 50 mg/dl drop
+        consistency_score = max(1.0 - (std_dev_change / 30.0), 0.0) if std_dev_change is not None else 0.5  # Lower std dev is better
+        response_time_score = max(1.0 - (avg_response_time - 45) / 60.0, 0.0)  # 45 min is optimal
+        
+        effectiveness_score = (glucose_drop_score * 0.4 + consistency_score * 0.3 + response_time_score * 0.3)
+        effectiveness_score = max(0.0, min(1.0, effectiveness_score))  # Clamp to 0-1
+        
+        correlations.append({
+            "group": group,
+            "avg_glucose_change": round(avg_glucose_change, 2),
+            "avg_insulin_units": round(avg_insulin_units, 2),
+            "insulin_sensitivity": round(avg_sensitivity, 2),
+            "num_doses": len(pairs),
+            "response_time_minutes": round(avg_response_time, 1),
+            "effectiveness_score": round(effectiveness_score, 3),
+            "correlation_coefficient": correlation_coefficient,
+            "std_dev_change": std_dev_change
+        })
+        
+        all_sensitivities.extend(sensitivities)
+    
+    # Sort by group name for consistent output
+    correlations.sort(key=lambda x: x["group"])
+    
+    # Calculate overall analysis
+    overall_avg_sensitivity = sum(all_sensitivities) / len(all_sensitivities) if all_sensitivities else None
+    
+    # Find most effective dose range
+    most_effective_group = None
+    if correlations:
+        most_effective_group = max(correlations, key=lambda x: x["effectiveness_score"])["group"]
+    
+    # Generate recommendations
+    recommendations = []
+    if total_doses_analyzed < 10:
+        recommendations.append("Need more data - analyze at least 10 insulin doses for reliable insights")
+    else:
+        if overall_avg_sensitivity and overall_avg_sensitivity < -30:
+            recommendations.append("High insulin sensitivity - be careful with dose increases")
+        elif overall_avg_sensitivity and overall_avg_sensitivity > -10:
+            recommendations.append("Low insulin sensitivity - may need higher doses or consult healthcare provider")
+        
+        if correlations:
+            best_group = max(correlations, key=lambda x: x["effectiveness_score"])
+            recommendations.append(f"Most effective: {best_group} (effectiveness: {best_group['effectiveness_score']:.1%})")
+    
+    overall_analysis = {
+        "total_doses_analyzed": total_doses_analyzed,
+        "avg_insulin_sensitivity": round(overall_avg_sensitivity, 2) if overall_avg_sensitivity else None,
+        "most_effective_dose_range": most_effective_group,
+        "recommendations": recommendations
+    }
+    
+    meta = {
+        "start_date": start.isoformat() if start else None,
+        "end_date": end.isoformat() if end else None,
+        "group_by": group_by,
+        "pre_insulin_minutes": pre_insulin_minutes,
+        "post_insulin_minutes": post_insulin_minutes
+    }
+    
+    return {
+        "correlations": correlations,
+        "overall_analysis": overall_analysis,
         "meta": meta
     }
