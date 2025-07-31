@@ -58,9 +58,15 @@
     - [x] Data quality metrics endpoint
     - [x] Unit conversion support (mg/dl ↔ mmol/l)
     - [x] AI recommendations integration
-- [ ] Document API with OpenAPI/Swagger (FastAPI auto-docs).
+- [x] Document API with OpenAPI/Swagger (FastAPI auto-docs).
+    - [x] Enhanced FastAPI app configuration with comprehensive metadata
+    - [x] Detailed API description with features and getting started guide
+    - [x] Contact information and license details
+    - [x] Server configurations for development and production
+    - [x] Organized endpoint tags with descriptions
+    - [x] Root endpoint with API information and quick links
+    - [x] Health check endpoint for monitoring
+    - [x] Comprehensive test coverage for documentation endpoints
 - [ ] (Optional) Deploy app (Docker, cloud, etc.).
 
 ---
-
-Update this file as you make progress on each task. 
