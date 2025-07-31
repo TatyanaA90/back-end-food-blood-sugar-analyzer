@@ -30,7 +30,12 @@
     - [x] Implement /analytics/meal-impact endpoint: shows average glucose change after meals, by meal type or time of day, for before/after meal visualizations.
     - [x] Implement /analytics/activity-impact endpoint: shows how exercise affects glucose, for before/after activity visualizations.
     - [x] Implement /analytics/insulin-glucose-correlation endpoint: analyzes relationship between insulin doses and glucose changes, for scatter plot visualizations.
-    - [x] Implement /analytics/recommendations endpoint: provides actionable tips and alerts based on recent data and trends.
+    - [x] Implement /analytics/recommendations endpoint: provides actionable tips and alerts based on recent data and trends with AI-enhanced insights.
+- [x] Code quality and maintenance improvements.
+    - [x] Update to Pydantic V2 syntax (ConfigDict, model_validate, model_dump)
+    - [x] Fix datetime.utcnow() deprecation warnings for Python 3.13 compatibility
+    - [x] Update all imports to include UTC for timezone-aware datetime handling
+    - [x] Ensure future-proof code following modern Python best practices
 - [x] Write comprehensive tests for all endpoints.
     - [x] Create separate test files for each router/feature
     - [x] Implement TestClient-based API testing
@@ -38,14 +43,21 @@
     - [x] Test model validation and authentication
     - [x] Fix Pydantic V2 migration issues
     - [x] Fix datetime deprecation warnings
-    - [x] Verify all 19 tests pass successfully
+    - [x] Verify all 38 tests pass successfully
 - [x] Code quality and maintenance improvements.
     - [x] Update to Pydantic V2 syntax (ConfigDict, model_validate, model_dump)
     - [x] Fix datetime.utcnow() deprecation warnings for Python 3.13 compatibility
     - [x] Update all imports to include UTC for timezone-aware datetime handling
     - [x] Ensure future-proof code following modern Python best practices
-- [ ] Implement endpoints for visualization data (charts, timelines, metrics).
-- [ ] Write tests for all endpoints.
+- [x] Implement endpoints for visualization data (charts, timelines, metrics).
+    - [x] Dashboard overview endpoint with unit conversion support
+    - [x] Glucose timeline endpoint with event overlay
+    - [x] Glucose trend data endpoint 
+    - [x] Meal impact data endpoint 
+    - [x] Activity impact data endpoint 
+    - [x] Data quality metrics endpoint
+    - [x] Unit conversion support (mg/dl ↔ mmol/l)
+    - [x] AI recommendations integration
 - [ ] Document API with OpenAPI/Swagger (FastAPI auto-docs).
 - [ ] (Optional) Deploy app (Docker, cloud, etc.).
 
