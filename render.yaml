@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: blood-sugar-analyzer-api
+    name: food-blood-sugar-analyzer-api
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
@@ -8,7 +8,7 @@ services:
     envVars:
       - key: SQLALCHEMY_DATABASE_URI
         fromDatabase:
-          name: bloodsugaranalyzer
+          name: foodbloodsugaranalyzer
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
