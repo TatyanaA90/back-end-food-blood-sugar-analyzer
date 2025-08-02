@@ -7,9 +7,7 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: SQLALCHEMY_DATABASE_URI
-        fromDatabase:
-          name: foodbloodsugaranalyzer
-          property: connectionString
+        value: postgresql://blood_sugar_analyzer_development_user:tFMy31ZofCXURmzGF6JrnMNSjaBQfE4s@dpg-d26v10ogjchc73elprd0-a.oregon-postgres.render.com:5432/blood_sugar_analyzer_development
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
