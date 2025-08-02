@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: blood-sugar-analyzer-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SQLALCHEMY_DATABASE_URI
+        fromDatabase:
+          name: bloodsugaranalyzer
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: DEBUG
+        value: false
+      - key: API_V1_STR
+        value: /api/v1
+      - key: PROJECT_NAME
+        value: Food & Blood Sugar Analyzer API 
