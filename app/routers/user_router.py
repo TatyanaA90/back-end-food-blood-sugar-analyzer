@@ -64,15 +64,19 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
             detail="Username or email already exists"
         )
 
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
 @router.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
+def login(user_login: UserLogin, session: Session = Depends(get_session)):
     """Authenticate user credentials and return JWT access token for session management."""
-    user = session.exec(select(User).where(User.username == form_data.username)).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    user = session.exec(select(User).where(User.username == user_login.username)).first()
+    if not user or not verify_password(user_login.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     access_token = create_access_token(
         data={"sub": user.username},
