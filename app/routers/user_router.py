@@ -72,12 +72,17 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+class UserLoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserRead
+
 @router.options("/login")
 def login_options():
     """Handle CORS preflight requests for the login endpoint."""
     return {"message": "CORS preflight OK"}
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=UserLoginResponse)
 def login(user_login: UserLogin, session: Session = Depends(get_session)):
     """Authenticate user credentials and return JWT access token for session management."""
     user = session.exec(select(User).where(User.username == user_login.username)).first()
@@ -87,7 +92,16 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
         data={"sub": user.username},
         expires_delta=timedelta(minutes=30)
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return UserLoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user=UserRead(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            username=user.username
+        )
+    )
 
 @router.get("/users/{user_id}", response_model=UserRead)
 def get_user(user_id: int, session: Session = Depends(get_session)):
