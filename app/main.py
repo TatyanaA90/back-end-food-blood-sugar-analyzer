@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from datetime import datetime, UTC
 from fastapi.responses import HTMLResponse
@@ -73,6 +74,20 @@ app = FastAPI(
             "description": "Clean data endpoints for frontend visualization and dashboard creation."
         }
     ]
+)
+
+# CORS middleware configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://food-blood-sugar-analyzer-frontend.onrender.com",  # Production frontend
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative dev server
+        "http://127.0.0.1:5173",  # Alternative local
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
 )
 
 app.include_router(user_router)
