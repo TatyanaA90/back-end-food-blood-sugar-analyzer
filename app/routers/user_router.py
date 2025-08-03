@@ -72,6 +72,11 @@ class Token(BaseModel):
     access_token: str
     token_type: str
 
+@router.options("/login")
+def login_options():
+    """Handle CORS preflight requests for the login endpoint."""
+    return {"message": "CORS preflight OK"}
+
 @router.post("/login", response_model=Token)
 def login(user_login: UserLogin, session: Session = Depends(get_session)):
     """Authenticate user credentials and return JWT access token for session management."""
