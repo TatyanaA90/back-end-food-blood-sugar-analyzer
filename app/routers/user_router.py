@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()
 
@@ -21,19 +22,42 @@ class UserRead(BaseModel):
     name: str
     username: str
 
-@router.post("/users", response_model=UserRead)
+class UserRegistrationResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: UserRead
+
+@router.post("/users", response_model=UserRegistrationResponse)
 def create_user(user: UserCreate, session: Session = Depends(get_session)):
     """Create a new user account with hashed password for secure storage."""
-    db_user = User(
-        email=user.email,
-        name=user.name,
-        username=user.username,
-        hashed_password=get_password_hash(user.password)
-    )
-    session.add(db_user)
-    session.commit()
-    session.refresh(db_user)
-    return db_user
+    try:
+        db_user = User(
+            email=user.email,
+            name=user.name,
+            username=user.username,
+            hashed_password=get_password_hash(user.password)
+        )
+        session.add(db_user)
+        session.commit()
+        session.refresh(db_user)
+        
+        # Create access token for immediate login after registration
+        access_token = create_access_token(
+            data={"sub": db_user.username},
+            expires_delta=timedelta(minutes=30)
+        )
+        
+        return UserRegistrationResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user=UserRead.model_validate(db_user)
+        )
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Username or email already exists"
+        )
 
 class Token(BaseModel):
     access_token: str
