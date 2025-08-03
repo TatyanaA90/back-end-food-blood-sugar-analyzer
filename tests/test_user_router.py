@@ -19,9 +19,13 @@ def test_user_registration():
     })
     assert response.status_code == 200 or response.status_code == 201
     data = response.json()
-    assert "id" in data
-    assert data["username"] == username
-    assert data["name"] == "Test User"
+    # Registration now returns {access_token, token_type, user}
+    assert "access_token" in data
+    assert "token_type" in data
+    assert "user" in data
+    assert "id" in data["user"]
+    assert data["user"]["username"] == username
+    assert data["user"]["name"] == "Test User"
 
 def test_user_login():
     # Generate unique identifiers for this test run
@@ -36,11 +40,15 @@ def test_user_login():
         "password": "testpassword",
         "name": "Test User 2"
     })
-    response = client.post("/login", data={
+    response = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
     assert response.status_code == 200
     data = response.json()
+    # Login now returns {access_token, token_type, user}
     assert "access_token" in data
-    assert data["token_type"] == "bearer" 
+    assert data["token_type"] == "bearer"
+    assert "user" in data
+    assert "id" in data["user"]
+    assert data["user"]["username"] == username 
