@@ -50,7 +50,12 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
         return UserRegistrationResponse(
             access_token=access_token,
             token_type="bearer",
-            user=UserRead.model_validate(db_user)
+            user=UserRead(
+                id=db_user.id,
+                email=db_user.email,
+                name=db_user.name,
+                username=db_user.username
+            )
         )
     except IntegrityError:
         session.rollback()
