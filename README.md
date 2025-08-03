@@ -19,6 +19,13 @@ This backend API serves the Food & Blood Sugar Analyzer frontend application, pr
 
 ## ✨ Features
 
+### Authentication & User Management
+- 🔐 **User Registration**: Complete registration flow with JWT token generation
+- 🔑 **User Login**: OAuth2-based authentication with secure password hashing
+- 🌐 **CORS Support**: Full cross-origin support for frontend applications
+- 🛡️ **Enhanced Error Handling**: Specific error messages for registration/login failures
+- 🔒 **JWT Authentication**: Secure token-based session management
+
 ### Core Data Management
 - 🩸 **Glucose Readings**: Track blood sugar levels with unit support (mg/dL, mmol/L)
 - 🍽️ **Meals**: Comprehensive meal tracking with ingredients and nutrition calculations
@@ -42,6 +49,21 @@ This backend API serves the Food & Blood Sugar Analyzer frontend application, pr
 - 📤 **CGM CSV Upload**: Continuous glucose monitor data import
 - 📊 **Data Processing**: Automatic parsing and validation
 - 🔄 **Format Support**: Multiple CGM device formats
+
+## 🔧 Recent Updates (August 2025)
+
+### Registration System Fixes
+- **CORS Policy**: Added comprehensive CORS middleware for frontend domain support
+- **API Response Format**: Fixed registration endpoint to return proper JWT token and user data
+- **Error Handling**: Enhanced with specific status codes (409 for duplicates, 400 for validation)
+- **Model Validation**: Resolved 500 internal server errors with explicit field mapping
+- **Database Integration**: Verified PostgreSQL connection and data persistence
+
+### Technical Improvements
+- **Cross-Origin Support**: Full support for `food-blood-sugar-analyzer-frontend.onrender.com`
+- **Authentication Flow**: Complete registration → JWT token → automatic login workflow
+- **Error Messages**: User-friendly, actionable error feedback
+- **Production Ready**: All fixes deployed and tested on Render.com
 
 ## 🛠️ Development
 
