@@ -101,6 +101,7 @@ app.include_router(dexcom_upload_router)
 app.include_router(analytics_router)
 app.include_router(visualization_router)
 
+
 @app.get("/", tags=["root"])
 def read_root():
     """

@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from app.core.database import get_session
 from app.models.user import User
+from app.models.glucose_reading import GlucoseReading
+from app.models.meal import Meal
+from app.models.meal_ingredient import MealIngredient
+from app.models.insulin_dose import InsulinDose
+from app.models.activity import Activity
+from app.models.condition_log import ConditionLog
 from pydantic import BaseModel
 from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user
 from fastapi.security import OAuth2PasswordRequestForm
@@ -120,4 +126,111 @@ def get_all_users(session: Session = Depends(get_session)):
 @router.get("/me", response_model=UserRead)
 def read_me(current_user: User = Depends(get_current_user)):
     """Get the currently authenticated user's information."""
-    return current_user 
+    return current_user
+
+@router.delete("/users/truncate-all")
+def truncate_all_users(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    ⚠️ DANGER: Delete ALL users and ALL related data.
+    Only use for development/testing purposes.
+    Requires admin privileges.
+    """
+    # Check if current user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Delete all related data first (due to foreign key constraints)
+        session.exec(delete(ConditionLog))
+        session.exec(delete(Activity))
+        session.exec(delete(InsulinDose))
+        session.exec(delete(MealIngredient))
+        session.exec(delete(Meal))
+        session.exec(delete(GlucoseReading))
+        
+        # Finally delete all users
+        result = session.exec(delete(User))
+        users_deleted = result.rowcount
+        
+        session.commit()
+        
+        return {
+            "message": f"Successfully deleted {users_deleted} users and all related data",
+            "users_deleted": users_deleted,
+            "warning": "All user data has been permanently deleted"
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error truncating data: {str(e)}")
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a specific user and all their related data.
+    Users can delete their own account, or admins can delete any user.
+    """
+    # Check if current user is admin or deleting their own account
+    if not current_user.is_admin and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="You can only delete your own account, or be an admin")
+    
+    # Find the user
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prevent admin from deleting themselves (safety measure)
+    if current_user.id == user_id and current_user.is_admin:
+        # Check if there are other admins
+        other_admins = session.exec(
+            select(User).where(User.is_admin == True, User.id != user_id)
+        ).all()
+        if not other_admins:
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot delete the last admin account. Create another admin first."
+            )
+    
+    try:
+        # Delete related data first (foreign key constraints)
+        session.exec(delete(ConditionLog).where(ConditionLog.user_id == user_id))
+        session.exec(delete(Activity).where(Activity.user_id == user_id))
+        session.exec(delete(InsulinDose).where(InsulinDose.user_id == user_id))
+        
+        # Delete meal ingredients for user's meals
+        user_meals = session.exec(select(Meal.id).where(Meal.user_id == user_id)).all()
+        for meal_id in user_meals:
+            session.exec(delete(MealIngredient).where(MealIngredient.meal_id == meal_id))
+        
+        session.exec(delete(Meal).where(Meal.user_id == user_id))
+        session.exec(delete(GlucoseReading).where(GlucoseReading.user_id == user_id))
+        
+        # Finally delete the user
+        session.delete(user)
+        session.commit()
+        
+        return {
+            "message": f"Successfully deleted user '{user.username}' and all related data",
+            "deleted_user": user.username
+        }
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error deleting user: {str(e)}")
+
+@router.get("/users/count")
+def get_users_count(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    """Get total number of users in the database (admin only)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    users_count = len(session.exec(select(User)).all())
+    return {"total_users": users_count} 

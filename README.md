@@ -133,12 +133,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ## 📡 API Endpoints
 
-### Authentication
+### Authentication & User Management
 - `POST /users` - User registration (returns JWT + user data)
 - `POST /login` - User login (JSON format, returns JWT + user data)
 - `GET /me` - Get current user
 - `GET /users/{user_id}` - Get user by ID
 - `GET /users` - Get all users (admin)
+- `GET /users/count` - Get total user count (admin only)
+- `DELETE /users/{user_id}` - Delete specific user and all related data (self or admin)
+- `DELETE /users/truncate-all` - ⚠️ Delete ALL users and data (admin only, development use)
 
 ### Core Data
 - `GET/POST/PUT/DELETE /glucose-readings` - Glucose readings CRUD
