@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select, delete
 from app.core.database import get_session
 from app.models.user import User
@@ -8,11 +8,16 @@ from app.models.meal_ingredient import MealIngredient
 from app.models.insulin_dose import InsulinDose
 from app.models.activity import Activity
 from app.models.condition_log import ConditionLog
-from pydantic import BaseModel
-from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user
+from pydantic import BaseModel, EmailStr
+from app.core.security import get_password_hash, verify_password, create_access_token, get_current_user, get_current_admin_user
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
+from datetime import timedelta, datetime, UTC
 from sqlalchemy.exc import IntegrityError
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -33,6 +38,122 @@ class UserRegistrationResponse(BaseModel):
     token_type: str
     user: UserRead
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordReset(BaseModel):
+    token: str
+    new_password: str
+
+class UserUpdateData(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    weight: float | None = None
+    weight_unit: str | None = None
+
+class AdminPasswordReset(BaseModel):
+    user_id: int
+    new_password: str
+
+class UserCount(BaseModel):
+    total_users: int
+
+def send_reset_email(email: str, reset_token: str):
+    """Send password reset email to user."""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = settings.SMTP_SENDER
+        msg['To'] = email
+        msg['Subject'] = "Password Reset Request"
+
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+        body = f"""
+        You have requested to reset your password.
+        
+        Click the link below to reset your password:
+        {reset_url}
+        
+        If you did not request this, please ignore this email.
+        The link will expire in 1 hour.
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            if settings.SMTP_TLS:
+                server.starttls()
+            if settings.SMTP_USER and settings.SMTP_PASSWORD:
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+            
+        return True
+    except Exception as e:
+        print(f"Error sending email: {e}")
+        return False
+
+@router.post("/forgot-password")
+def forgot_password(request: PasswordResetRequest, session: Session = Depends(get_session)):
+    """Request a password reset token."""
+    user = session.exec(select(User).where(User.email == request.email)).first()
+    if not user:
+        # Don't reveal if email exists
+        return {"message": "If an account exists with this email, a reset link will be sent."}
+    
+    # Generate reset token
+    reset_token = secrets.token_urlsafe(32)
+    user.reset_token = reset_token
+    user.reset_token_expires = datetime.now(UTC) + timedelta(hours=1)
+    
+    session.add(user)
+    session.commit()
+    
+    # Send reset email
+    if send_reset_email(request.email, reset_token):
+        return {"message": "If an account exists with this email, a reset link will be sent."}
+    else:
+        # For testing, we'll return success even if email fails
+        return {"message": "If an account exists with this email, a reset link will be sent."}
+
+@router.post("/reset-password")
+def reset_password(reset_data: PasswordReset, session: Session = Depends(get_session)):
+    """Reset password using reset token."""
+    user = session.exec(select(User).where(User.reset_token == reset_data.token)).first()
+    
+    if not user or not user.reset_token_expires or user.reset_token_expires < datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    
+    # Update password
+    user.hashed_password = get_password_hash(reset_data.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    
+    session.add(user)
+    session.commit()
+    
+    return {"message": "Password reset successfully"}
+
+@router.post("/me/change-password")
+def change_password(
+    password_data: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Change the current user's password."""
+    # Verify current password
+    if not verify_password(password_data.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    
+    # Hash and update new password
+    current_user.hashed_password = get_password_hash(password_data.new_password)
+    session.add(current_user)
+    session.commit()
+    
+    return {"message": "Password changed successfully"}
+
 @router.post("/users", response_model=UserRegistrationResponse)
 def create_user(user: UserCreate, session: Session = Depends(get_session)):
     """Create a new user account with hashed password for secure storage."""
@@ -50,7 +171,8 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
         # Create access token for immediate login after registration
         access_token = create_access_token(
             data={"sub": db_user.username},
-            expires_delta=timedelta(minutes=30)
+            expires_delta=timedelta(minutes=30),
+            is_admin=db_user.is_admin
         )
         
         return UserRegistrationResponse(
@@ -96,7 +218,8 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     access_token = create_access_token(
         data={"sub": user.username},
-        expires_delta=timedelta(minutes=30)
+        expires_delta=timedelta(minutes=30),
+        is_admin=user.is_admin
     )
     return UserLoginResponse(
         access_token=access_token,
@@ -109,6 +232,21 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
         )
     )
 
+@router.get("/users/stats/count", response_model=UserCount)
+def get_users_count(
+    current_user: User = Depends(get_current_admin_user),
+    session: Session = Depends(get_session)
+):
+    """Get total number of users in the database (admin only)."""
+    users_count = len(session.exec(select(User)).all())
+    return UserCount(total_users=users_count)
+
+@router.get("/users", response_model=list[UserRead])
+def get_all_users(session: Session = Depends(get_session)):
+    """Retrieve all users from the database for administrative purposes."""
+    users = session.exec(select(User)).all()
+    return users
+
 @router.get("/users/{user_id}", response_model=UserRead)
 def get_user(user_id: int, session: Session = Depends(get_session)):
     """Retrieve user information by user ID from the database."""
@@ -117,31 +255,37 @@ def get_user(user_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-@router.get("/users", response_model=list[UserRead])
-def get_all_users(session: Session = Depends(get_session)):
-    """Retrieve all users from the database for administrative purposes."""
-    users = session.exec(select(User)).all()
-    return users
-
 @router.get("/me", response_model=UserRead)
 def read_me(current_user: User = Depends(get_current_user)):
     """Get the currently authenticated user's information."""
     return current_user
 
+@router.put("/me", response_model=UserRead)
+def update_me(
+    data: UserUpdateData,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Update current user's profile."""
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(current_user, field, value)
+    
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+    
+    return current_user
+
 @router.delete("/users/truncate-all")
 def truncate_all_users(
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     ⚠️ DANGER: Delete ALL users and ALL related data.
     Only use for development/testing purposes.
     Requires admin privileges.
     """
-    # Check if current user is admin
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
     try:
         # Delete all related data first (due to foreign key constraints)
         session.exec(delete(ConditionLog))
@@ -223,14 +367,28 @@ def delete_user(
         session.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting user: {str(e)}")
 
-@router.get("/users/count")
+@router.post("/admin/reset-password")
+def admin_reset_password(
+    reset_data: AdminPasswordReset,
+    current_user: User = Depends(get_current_admin_user),
+    session: Session = Depends(get_session)
+):
+    """Reset a user's password (admin only)."""
+    user = session.get(User, reset_data.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.hashed_password = get_password_hash(reset_data.new_password)
+    session.add(user)
+    session.commit()
+    
+    return {"message": "Password reset successfully"}
+
+@router.get("/users/count", response_model=UserCount)
 def get_users_count(
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user),
+    session: Session = Depends(get_session)
 ):
     """Get total number of users in the database (admin only)."""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
     users_count = len(session.exec(select(User)).all())
-    return {"total_users": users_count} 
+    return UserCount(total_users=users_count)

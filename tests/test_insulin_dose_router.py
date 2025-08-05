@@ -18,7 +18,7 @@ def test_create_insulin_dose():
         "password": "testpassword",
         "name": "Insulin Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -31,4 +31,4 @@ def test_create_insulin_dose():
     }, headers=headers)
     assert response.status_code == 201
     data = response.json()
-    assert data["units"] == 5.0 
+    assert data["units"] == 5.0

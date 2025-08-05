@@ -1,4 +1,5 @@
 from typing import List, Optional, TYPE_CHECKING
+from datetime import datetime
 from sqlmodel import Field, Relationship
 from app.models.base import Base
 
@@ -11,6 +12,8 @@ class User(Base, table=True):
     is_admin: bool = Field(default=False)
     weight: Optional[float] = None  # Always stored in kg for calculations
     weight_unit: str = Field(default="kg")  # User's preferred unit: "kg" or "lb"
+    reset_token: Optional[str] = Field(default=None)
+    reset_token_expires: Optional[datetime] = Field(default=None)
 
     glucose_readings: List["GlucoseReading"] = Relationship(back_populates="user")
     meals: List["Meal"] = Relationship(back_populates="user")
@@ -23,4 +26,4 @@ if TYPE_CHECKING:
     from .meal import Meal
     from .insulin_dose import InsulinDose
     from .activity import Activity
-    from .condition_log import ConditionLog 
+    from .condition_log import ConditionLog

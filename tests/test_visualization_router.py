@@ -20,7 +20,7 @@ def test_dashboard_overview_mgdl():
         "password": "testpassword",
         "name": "Dashboard Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -68,7 +68,7 @@ def test_dashboard_overview_mmol():
         "password": "testpassword",
         "name": "Dashboard mmol Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -103,7 +103,7 @@ def test_glucose_timeline():
         "password": "testpassword",
         "name": "Timeline Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -146,7 +146,7 @@ def test_glucose_timeline_with_ingredients():
         "password": "testpassword",
         "name": "Timeline Ingredients Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -201,7 +201,7 @@ def test_glucose_trend_data():
         "password": "testpassword",
         "name": "Trend Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -250,7 +250,7 @@ def test_glucose_trend_data_with_moving_average():
         "password": "testpassword",
         "name": "Trend Average Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -287,7 +287,7 @@ def test_glucose_trend_data_mmol():
         "password": "testpassword",
         "name": "Trend mmol Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -324,7 +324,7 @@ def test_meal_impact_data():
         "password": "testpassword",
         "name": "Meal Impact Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -367,7 +367,7 @@ def test_activity_impact_data():
         "password": "testpassword",
         "name": "Activity Impact Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -410,7 +410,7 @@ def test_data_quality_metrics():
         "password": "testpassword",
         "name": "Data Quality Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -475,7 +475,7 @@ def test_invalid_unit_parameter():
         "password": "testpassword",
         "name": "Invalid Unit Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -501,7 +501,7 @@ def test_no_data_handling():
         "password": "testpassword",
         "name": "No Data Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -536,7 +536,7 @@ def test_custom_date_range():
         "password": "testpassword",
         "name": "Date Range Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -568,7 +568,7 @@ def test_missing_custom_date_parameters():
         "password": "testpassword",
         "name": "Missing Date Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -609,7 +609,7 @@ def test_recommendations_integration():
         "password": "testpassword",
         "name": "Recommendations Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -634,4 +634,4 @@ def test_recommendations_integration():
     assert "recent_meals" in dashboard
     assert "upcoming_insulin" in dashboard
     assert "activity_summary" in dashboard
-    assert "data_sources" in data 
+    assert "data_sources" in data

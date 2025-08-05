@@ -18,7 +18,7 @@ def test_create_glucose_reading():
         "password": "testpassword",
         "name": "Glucose Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -33,4 +33,4 @@ def test_create_glucose_reading():
     assert response.status_code == 201
     data = response.json()
     assert data["value"] == 120
-    assert data["unit"] == "mg/dl" 
+    assert data["unit"] == "mg/dl"

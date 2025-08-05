@@ -18,7 +18,7 @@ def test_create_activity():
         "password": "testpassword",
         "name": "Activity Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -50,7 +50,7 @@ def test_create_activity_with_start_end_time():
         "password": "testpassword",
         "name": "Activity Time Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -90,7 +90,7 @@ def test_get_previous_activities():
         "password": "testpassword",
         "name": "Previous Activities Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -114,4 +114,4 @@ def test_get_previous_activities():
     assert response.status_code == 200
     data = response.json()
     assert len(data) <= 5
-    assert all("type" in activity for activity in data) 
+    assert all("type" in activity for activity in data)

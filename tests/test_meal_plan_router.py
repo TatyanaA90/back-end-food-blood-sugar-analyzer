@@ -18,7 +18,7 @@ def test_create_meal():
         "password": "testpassword",
         "name": "Meal Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -35,4 +35,4 @@ def test_create_meal():
     assert response.status_code == 201
     data = response.json()
     assert data["description"] == "Test Meal"
-    assert data["total_carbs"] == 28 
+    assert data["total_carbs"] == 28

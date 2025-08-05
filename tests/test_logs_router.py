@@ -18,7 +18,7 @@ def test_create_condition_log():
         "password": "testpassword",
         "name": "Log Test User"
     })
-    login = client.post("/login", data={
+    login = client.post("/login", json={
         "username": username,
         "password": "testpassword"
     })
@@ -33,4 +33,4 @@ def test_create_condition_log():
     assert response.status_code == 201
     data = response.json()
     assert data["type"] == "Stress"
-    assert data["value"] == "High" 
+    assert data["value"] == "High"

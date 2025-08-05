@@ -139,7 +139,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 - `GET /me` - Get current user
 - `GET /users/{user_id}` - Get user by ID
 - `GET /users` - Get all users (admin)
-- `GET /users/count` - Get total user count (admin only)
+- `GET /users/stats/count` - Get total user count (admin only)
 - `DELETE /users/{user_id}` - Delete specific user and all related data (self or admin)
 - `DELETE /users/truncate-all` - ⚠️ Delete ALL users and data (admin only, development use)
 

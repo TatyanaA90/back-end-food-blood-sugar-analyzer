@@ -25,14 +25,17 @@ def get_password_hash(password: str) -> str:
     """Hash a plain text password using bcrypt for secure storage."""
     return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, is_admin: bool = False) -> str:
     """Create a JWT access token with the provided data and expiration time."""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:
         expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+        "is_admin": is_admin
+    })
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -68,4 +71,15 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(oauth2_
             detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return user 
+    # Update user's admin status from token
+    user.is_admin = payload.get("is_admin", False)
+    return user
+
+def get_current_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    """Get authenticated admin user."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user

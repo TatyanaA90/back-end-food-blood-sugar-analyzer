@@ -23,7 +23,7 @@
     - [x] User deletion and data management endpoints
         - [x] Individual user deletion with cascade data cleanup
         - [x] Administrative user truncation for development
-        - [x] User count monitoring for administrators
+        - [x] User count monitoring for administrators via /users/stats/count endpoint
         - [x] Safety features and permission controls
 - [x] Implement CRUD endpoints for Meals, including business logic (auto-calculate totals, permissions, cascade delete ingredients, admin/user access control, response models for list/detail).
 - [x] Implement CRUD endpoints for Activities, including MET-based calories burned auto-calculation, weight tracking (kg/lb), permissions, and response models.
