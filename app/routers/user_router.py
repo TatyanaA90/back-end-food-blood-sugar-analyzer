@@ -32,6 +32,9 @@ class UserRead(BaseModel):
     email: str
     name: str
     username: str
+    is_admin: bool
+    weight: float | None = None
+    weight_unit: str | None = None
 
 class UserRegistrationResponse(BaseModel):
     access_token: str
@@ -182,7 +185,10 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
                 id=db_user.id,
                 email=db_user.email,
                 name=db_user.name,
-                username=db_user.username
+                username=db_user.username,
+                is_admin=db_user.is_admin,
+                weight=db_user.weight,
+                weight_unit=db_user.weight_unit
             )
         )
     except IntegrityError:
@@ -228,7 +234,10 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
             id=user.id,
             email=user.email,
             name=user.name,
-            username=user.username
+            username=user.username,
+            is_admin=user.is_admin,
+            weight=user.weight,
+            weight_unit=user.weight_unit
         )
     )
 
