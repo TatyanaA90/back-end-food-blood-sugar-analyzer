@@ -52,6 +52,13 @@ This backend API serves the Food & Blood Sugar Analyzer frontend application, pr
 
 ## 🔧 Recent Updates (August 2025)
 
+### API Response Model Enhancement (August 5, 2025)
+- **UserRead Model**: Enhanced with additional fields (is_admin, weight, weight_unit)
+- **API Consistency**: Updated all user-related endpoints to return complete user data
+- **Affected Endpoints**: /me, /login, /users, /users/{user_id}
+- **Frontend Integration**: Improved profile page data display
+- **Documentation**: Updated API documentation to reflect new response format
+
 ### Complete Authentication System Resolution ✅ COMPLETED
 **Date**: August 3, 2025
 
@@ -134,12 +141,13 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 ## 📡 API Endpoints
 
 ### Authentication & User Management
-- `POST /users` - User registration (returns JWT + user data)
-- `POST /login` - User login (JSON format, returns JWT + user data)
-- `GET /me` - Get current user
-- `GET /users/{user_id}` - Get user by ID
-- `GET /users` - Get all users (admin)
+- `POST /users` - User registration (returns JWT + complete user data)
+- `POST /login` - User login (returns JWT + complete user data)
+- `GET /me` - Get current user (includes is_admin, weight, weight_unit)
+- `GET /users/{user_id}` - Get user by ID (includes all user fields)
+- `GET /users` - Get all users (admin only, full user details)
 - `GET /users/stats/count` - Get total user count (admin only)
+- `PUT /me` - Update current user profile (name, email, weight, weight_unit)
 - `DELETE /users/{user_id}` - Delete specific user and all related data (self or admin)
 - `DELETE /users/truncate-all` - ⚠️ Delete ALL users and data (admin only, development use)
 

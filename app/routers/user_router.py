@@ -26,6 +26,8 @@ class UserCreate(BaseModel):
     name: str
     username: str
     password: str
+    weight: float | None = None
+    weight_unit: str | None = None
 
 class UserRead(BaseModel):
     id: int
@@ -165,7 +167,9 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
             email=user.email,
             name=user.name,
             username=user.username,
-            hashed_password=get_password_hash(user.password)
+            hashed_password=get_password_hash(user.password),
+            weight=user.weight,
+            weight_unit=user.weight_unit
         )
         session.add(db_user)
         session.commit()

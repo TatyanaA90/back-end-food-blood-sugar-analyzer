@@ -19,6 +19,8 @@
     - [x] Enhanced registration endpoint with JWT token response
     - [x] Comprehensive error handling with specific status codes
     - [x] Model validation fixes for production stability
+    - [x] Enhanced UserRead model with complete user data (is_admin, weight, weight_unit)
+    - [x] Updated all user-related endpoints for consistent response format
     - [x] PostgreSQL database integration verified and working
     - [x] User deletion and data management endpoints
         - [x] Individual user deletion with cascade data cleanup
