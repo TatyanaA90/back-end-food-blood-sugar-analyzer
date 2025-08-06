@@ -60,35 +60,7 @@ class UserUpdateData(BaseModel):
     weight: float | None = None
     weight_unit: str | None = None
 
-class AdminPasswordReset(BaseModel):
-    user_id: int
-    new_password: str
 
-class UserCount(BaseModel):
-    total_users: int
-
-class UserDetail(BaseModel):
-    id: int
-    email: str
-    name: str
-    username: str
-    is_admin: bool
-    weight: float | None = None
-    weight_unit: str | None = None
-    created_at: datetime
-    updated_at: datetime
-    glucose_readings_count: int = 0
-    meals_count: int = 0
-    activities_count: int = 0
-    insulin_doses_count: int = 0
-    condition_logs_count: int = 0
-
-class AdminUserUpdate(BaseModel):
-    name: str | None = None
-    email: str | None = None
-    weight: float | None = None
-    weight_unit: str | None = None
-    is_admin: bool | None = None
 
 def send_reset_email(email: str, reset_token: str):
     """Send password reset email to user."""
@@ -268,35 +240,7 @@ def login(user_login: UserLogin, session: Session = Depends(get_session)):
         )
     )
 
-@router.get("/users/stats/count", response_model=UserCount)
-def get_users_count(
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Get total number of users in the database (admin only)."""
-    users_count = len(session.exec(select(User)).all())
-    return UserCount(total_users=users_count)
 
-@router.get("/users", response_model=list[UserRead])
-def get_all_users(
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Retrieve all users from the database for administrative purposes (admin only)."""
-    users = session.exec(select(User)).all()
-    return users
-
-@router.get("/users/{user_id}", response_model=UserRead)
-def get_user(
-    user_id: int, 
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Retrieve user information by user ID from the database (admin only)."""
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
 
 @router.get("/me", response_model=UserRead)
 def read_me(current_user: User = Depends(get_current_user)):
@@ -319,39 +263,7 @@ def update_me(
     
     return current_user
 
-@router.delete("/users/truncate-all")
-def truncate_all_users(
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_admin_user)
-):
-    """
-    ⚠️ DANGER: Delete ALL users and ALL related data.
-    Only use for development/testing purposes.
-    Requires admin privileges.
-    """
-    try:
-        # Delete all related data first (due to foreign key constraints)
-        session.exec(delete(ConditionLog))
-        session.exec(delete(Activity))
-        session.exec(delete(InsulinDose))
-        session.exec(delete(MealIngredient))
-        session.exec(delete(Meal))
-        session.exec(delete(GlucoseReading))
-        
-        # Finally delete all users
-        result = session.exec(delete(User))
-        users_deleted = result.rowcount
-        
-        session.commit()
-        
-        return {
-            "message": f"Successfully deleted {users_deleted} users and all related data",
-            "users_deleted": users_deleted,
-            "warning": "All user data has been permanently deleted"
-        }
-    except Exception as e:
-        session.rollback()
-        raise HTTPException(status_code=500, detail=f"Error truncating data: {str(e)}")
+
 
 @router.delete("/users/{user_id}")
 def delete_user(
@@ -410,131 +322,3 @@ def delete_user(
         session.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting user: {str(e)}")
 
-@router.post("/admin/reset-password")
-def admin_reset_password(
-    reset_data: AdminPasswordReset,
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Reset a user's password (admin only)."""
-    user = session.get(User, reset_data.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    user.hashed_password = get_password_hash(reset_data.new_password)
-    session.add(user)
-    session.commit()
-    
-    return {"message": "Password reset successfully"}
-
-@router.get("/users/count", response_model=UserCount)
-def get_users_count(
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Get total number of users in the database (admin only)."""
-    users_count = len(session.exec(select(User)).all())
-    return UserCount(total_users=users_count)
-
-@router.get("/admin/users/detailed", response_model=list[UserDetail])
-def get_users_detailed(
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Get detailed user information including data counts (admin only)."""
-    users = session.exec(select(User)).all()
-    user_details = []
-    
-    for user in users:
-        # Count related data
-        glucose_count = len(session.exec(select(GlucoseReading).where(GlucoseReading.user_id == user.id)).all())
-        meals_count = len(session.exec(select(Meal).where(Meal.user_id == user.id)).all())
-        activities_count = len(session.exec(select(Activity).where(Activity.user_id == user.id)).all())
-        insulin_count = len(session.exec(select(InsulinDose).where(InsulinDose.user_id == user.id)).all())
-        logs_count = len(session.exec(select(ConditionLog).where(ConditionLog.user_id == user.id)).all())
-        
-        user_detail = UserDetail(
-            id=user.id,
-            email=user.email,
-            name=user.name,
-            username=user.username,
-            is_admin=user.is_admin,
-            weight=user.weight,
-            weight_unit=user.weight_unit,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-            glucose_readings_count=glucose_count,
-            meals_count=meals_count,
-            activities_count=activities_count,
-            insulin_doses_count=insulin_count,
-            condition_logs_count=logs_count
-        )
-        user_details.append(user_detail)
-    
-    return user_details
-
-@router.put("/admin/users/{user_id}", response_model=UserRead)
-def update_user_admin(
-    user_id: int,
-    data: AdminUserUpdate,
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Update user information (admin only)."""
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Update fields
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(user, field, value)
-    
-    session.add(user)
-    session.commit()
-    session.refresh(user)
-    
-    return user
-
-@router.get("/admin/users/{user_id}/data", response_model=dict)
-def get_user_data(
-    user_id: int,
-    current_user: User = Depends(get_current_admin_user),
-    session: Session = Depends(get_session)
-):
-    """Get all data for a specific user (admin only)."""
-    user = session.exec(select(User).where(User.id == user_id)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get all user data
-    glucose_readings = session.exec(select(GlucoseReading).where(GlucoseReading.user_id == user_id)).all()
-    meals = session.exec(select(Meal).where(Meal.user_id == user_id)).all()
-    activities = session.exec(select(Activity).where(Activity.user_id == user_id)).all()
-    insulin_doses = session.exec(select(InsulinDose).where(InsulinDose.user_id == user_id)).all()
-    condition_logs = session.exec(select(ConditionLog).where(ConditionLog.user_id == user_id)).all()
-    
-    return {
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "name": user.name,
-            "is_admin": user.is_admin,
-            "weight": user.weight,
-            "weight_unit": user.weight_unit,
-            "created_at": user.created_at,
-            "updated_at": user.updated_at
-        },
-        "data_summary": {
-            "glucose_readings_count": len(glucose_readings),
-            "meals_count": len(meals),
-            "activities_count": len(activities),
-            "insulin_doses_count": len(insulin_doses),
-            "condition_logs_count": len(condition_logs)
-        },
-        "glucose_readings": [{"id": gr.id, "value": gr.value, "unit": gr.unit, "timestamp": gr.timestamp} for gr in glucose_readings],
-        "meals": [{"id": m.id, "name": m.name, "meal_type": m.meal_type, "timestamp": m.timestamp} for m in meals],
-        "activities": [{"id": a.id, "activity_type": a.activity_type, "duration_minutes": a.duration_minutes, "timestamp": a.timestamp} for a in activities],
-        "insulin_doses": [{"id": i.id, "insulin_type": i.insulin_type, "units": i.units, "timestamp": i.timestamp} for i in insulin_doses],
-        "condition_logs": [{"id": c.id, "condition_type": c.condition_type, "severity": c.severity, "timestamp": c.timestamp} for c in condition_logs]
-    }

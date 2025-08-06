@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime, UTC
 from fastapi.responses import HTMLResponse
 from app.routers.user_router import router as user_router
+from app.routers.admin_router import router as admin_router
 from app.routers.meal_plan_router import router as meal_router
 from app.routers.activity_router import router as activity_router
 from app.routers.insulin_dose_router import router as insulin_dose_router
@@ -92,6 +93,7 @@ app.add_middleware(
 )
 
 app.include_router(user_router)
+app.include_router(admin_router)
 app.include_router(meal_router)
 app.include_router(activity_router)
 app.include_router(insulin_dose_router)
