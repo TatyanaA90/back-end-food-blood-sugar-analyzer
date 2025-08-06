@@ -203,7 +203,7 @@ def test_reset_password(test_user, test_db_session):
 
 def test_admin_reset_user_password(test_user, test_admin, admin_auth_headers):
     """Test admin resetting user password"""
-    response = client.post("/admin/reset-password", json={
+    response = client.post(f"/admin/users/{test_user['id']}/reset-password", json={
         "user_id": test_user["id"],
         "new_password": "AdminReset123!"
     }, headers=admin_auth_headers)
@@ -221,19 +221,22 @@ def test_delete_user(test_user, auth_headers):
     response = client.delete(f"/users/{test_user['id']}", headers=auth_headers)
     assert response.status_code == 200
     
-    # Try to get deleted user
-    response = client.get(f"/users/{test_user['id']}", headers=auth_headers)
-    assert response.status_code in [401, 404]
+    # Verify user was deleted by trying to login with deleted user credentials
+    response = client.post("/login", json={
+        "username": test_user["username"],
+        "password": test_user["password"]
+    })
+    assert response.status_code == 401
 
 def test_admin_delete_user(test_user, test_admin, admin_auth_headers):
     """Test admin deleting user account"""
-    response = client.delete(f"/users/{test_user['id']}", headers=admin_auth_headers)
+    response = client.delete(f"/admin/users/{test_user['id']}", headers=admin_auth_headers)
     assert response.status_code == 200
     assert "deleted" in response.json()["message"].lower()
 
 def test_admin_get_user_stats(test_admin, admin_auth_headers):
     """Test getting user statistics"""
-    response = client.get("/users/stats/count", headers=admin_auth_headers)
+    response = client.get("/admin/stats", headers=admin_auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "total_users" in data
@@ -242,15 +245,15 @@ def test_admin_get_user_stats(test_admin, admin_auth_headers):
 def test_non_admin_operations_fail(test_user, auth_headers):
     """Test that non-admin users cannot access admin endpoints"""
     # Try to get user stats
-    response = client.get("/users/stats/count", headers=auth_headers)
+    response = client.get("/admin/stats", headers=auth_headers)
     assert response.status_code == 403
     
     # Try to delete another user
-    response = client.delete(f"/users/{test_user['id'] + 1}", headers=auth_headers)
+    response = client.delete(f"/admin/users/{test_user['id'] + 1}", headers=auth_headers)
     assert response.status_code == 403
     
     # Try to reset another user's password
-    response = client.post("/admin/reset-password", json={
+    response = client.post(f"/admin/users/{test_user['id'] + 1}/reset-password", json={
         "user_id": test_user["id"] + 1,
         "new_password": "Unauthorized123!"
     }, headers=auth_headers)

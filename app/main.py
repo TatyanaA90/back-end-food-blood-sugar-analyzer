@@ -73,6 +73,10 @@ app = FastAPI(
         {
             "name": "visualization",
             "description": "Clean data endpoints for frontend visualization and dashboard creation."
+        },
+        {
+            "name": "admin",
+            "description": "Administrative operations for user management and system administration."
         }
     ]
 )
