@@ -26,6 +26,7 @@ def create_glucose_reading(reading_in: GlucoseReadingCreate, session: Session = 
         value=reading_in.value,
         unit=reading_in.unit,  # User can choose "mg/dl" or "mmol/l"
         timestamp=reading_in.timestamp or datetime.now(UTC),
+        meal_context=reading_in.meal_context,
         note=reading_in.note
     )
     # Add and save the new reading to the database
@@ -36,13 +37,54 @@ def create_glucose_reading(reading_in: GlucoseReadingCreate, session: Session = 
 
 # List all glucose readings for the current user (or all if admin)
 @router.get("/", response_model=List[GlucoseReadingReadBasic])
-def list_glucose_readings(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
-    # Admins see all readings, users see only their own
-    if current_user.is_admin:
-        readings = session.exec(select(GlucoseReading)).all()
-    else:
-        readings = session.exec(select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)).all()
-    # Return a list of reading summaries
+def list_glucose_readings(
+    start_date: str = None,
+    end_date: str = None,
+    meal_context: str = None,
+    unit: str = None,
+    search: str = None,
+    session: Session = Depends(get_session), 
+    current_user: User = Depends(get_current_user)
+):
+    # Build the base query
+    query = select(GlucoseReading)
+    
+    # Filter by user (unless admin)
+    if not current_user.is_admin:
+        query = query.where(GlucoseReading.user_id == current_user.id)
+    
+    # Apply filters
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.where(GlucoseReading.timestamp >= start_dt)
+        except ValueError:
+            pass  # Ignore invalid date format
+    
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            query = query.where(GlucoseReading.timestamp <= end_dt)
+        except ValueError:
+            pass  # Ignore invalid date format
+    
+    if meal_context:
+        query = query.where(GlucoseReading.meal_context == meal_context)
+    
+    if unit:
+        query = query.where(GlucoseReading.unit == unit)
+    
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(
+            (GlucoseReading.value.cast(str).contains(search_term)) |
+            (GlucoseReading.unit.contains(search_term)) |
+            (GlucoseReading.meal_context.contains(search_term)) |
+            (GlucoseReading.note.contains(search_term))
+        )
+    
+    # Execute query and return results
+    readings = session.exec(query).all()
     return [GlucoseReadingReadBasic.model_validate(r) for r in readings]
 
 # Get a single glucose reading by ID

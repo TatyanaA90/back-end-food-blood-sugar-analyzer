@@ -111,6 +111,7 @@ class GlucoseReadingBase(BaseModel):
     value: float
     unit: str = "mg/dl"  # "mg/dl" or "mmol/l"
     timestamp: Optional[datetime] = None
+    meal_context: Optional[str] = None  # "before_breakfast", "after_breakfast", etc.
     note: Optional[str] = None
 
 class GlucoseReadingCreate(GlucoseReadingBase):

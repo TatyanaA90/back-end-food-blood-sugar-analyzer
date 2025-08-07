@@ -9,6 +9,7 @@ class GlucoseReading(Base, table=True):
     timestamp: Optional[datetime] = None
     value: float
     unit: str = Field(default="mg/dl")  # "mg/dl" or "mmol/l"
+    meal_context: Optional[str] = None  # "before_breakfast", "after_breakfast", etc.
     note: Optional[str] = None
 
     user: "User" = Relationship(back_populates="glucose_readings")
