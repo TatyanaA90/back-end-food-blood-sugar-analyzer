@@ -8,6 +8,9 @@ from app.schemas import (
     MealCreate, MealUpdate, MealReadBasic, MealReadDetail,
     MealIngredientCreate, MealIngredientRead
 )
+from app.schemas.predefined_meal import MealFromPredefinedCreate
+from app.models.predefined_meal import PredefinedMeal
+from app.models.predefined_meal_ingredient import PredefinedMealIngredient
 from app.core.security import get_current_user
 from typing import List
 
@@ -55,6 +58,100 @@ def create_meal(meal_in: MealCreate, session: Session = Depends(get_session), cu
         session.add(ingredient)
     session.commit()
     session.refresh(meal)
+    # Reload with ingredients
+    meal = session.exec(select(Meal).where(Meal.id == meal.id)).first()
+    return MealReadDetail.model_validate(meal)
+
+@router.post("/from-predefined", response_model=MealReadDetail, status_code=status.HTTP_201_CREATED)
+def create_meal_from_predefined(
+    meal_data: MealFromPredefinedCreate, 
+    session: Session = Depends(get_session), 
+    current_user: User = Depends(get_current_user)
+):
+    """Create a meal from a predefined template with quantity and weight adjustments"""
+    
+    # Validate quantity
+    if meal_data.quantity < 1 or meal_data.quantity > 10:
+        raise HTTPException(status_code=400, detail="Quantity must be between 1 and 10")
+    
+    # Get the predefined meal
+    predefined_meal = session.get(PredefinedMeal, meal_data.predefined_meal_id)
+    if not predefined_meal or not predefined_meal.is_active:
+        raise HTTPException(status_code=404, detail="Predefined meal not found")
+    
+    # Calculate base nutrition per portion
+    total_carbs_per_portion = 0
+    total_weight_per_portion = 0
+    
+    # Create ingredient adjustments map
+    ingredient_adjustments = {}
+    if meal_data.ingredient_adjustments:
+        for adjustment in meal_data.ingredient_adjustments:
+            ingredient_adjustments[adjustment['ingredient_id']] = adjustment['adjusted_weight']
+    
+    # Create meal ingredients from predefined template
+    meal_ingredients = []
+    for predefined_ingredient in predefined_meal.ingredients:
+        # Calculate base weight for this portion
+        base_weight = predefined_ingredient.base_weight * meal_data.quantity
+        
+        # Apply user adjustment if provided
+        adjusted_weight = ingredient_adjustments.get(predefined_ingredient.id, base_weight)
+        
+        # Validate adjusted weight
+        if adjusted_weight < 0:
+            raise HTTPException(status_code=400, detail=f"Weight for {predefined_ingredient.name} must be >= 0")
+        
+        # Calculate carbs based on final weight
+        carbs = (adjusted_weight / 100) * predefined_ingredient.carbs_per_100g
+        
+        total_carbs_per_portion += carbs
+        total_weight_per_portion += adjusted_weight
+        
+        meal_ingredients.append({
+            'name': predefined_ingredient.name,
+            'weight': adjusted_weight,
+            'carbs': carbs,
+            'glycemic_index': predefined_ingredient.glycemic_index,
+            'note': predefined_ingredient.note
+        })
+    
+    # Create the meal
+    assert current_user.id is not None, "User ID must not be None"
+    meal = Meal(
+        description=predefined_meal.name,
+        total_weight=total_weight_per_portion,
+        total_carbs=total_carbs_per_portion,
+        note=meal_data.note,
+        photo_url=meal_data.photo_url,
+        timestamp=meal_data.timestamp,
+        user_id=current_user.id,
+        is_predefined=True,
+        predefined_meal_id=predefined_meal.id,
+        quantity=meal_data.quantity
+    )
+    session.add(meal)
+    session.commit()
+    session.refresh(meal)
+    
+    # Add ingredients
+    if meal.id is None:
+        raise HTTPException(status_code=500, detail="Meal ID not set after creation.")
+    
+    for ingredient_data in meal_ingredients:
+        ingredient = MealIngredient(
+            meal_id=int(meal.id),
+            name=ingredient_data['name'],
+            weight=ingredient_data['weight'],
+            carbs=ingredient_data['carbs'],
+            glycemic_index=ingredient_data['glycemic_index'],
+            note=ingredient_data['note']
+        )
+        session.add(ingredient)
+    
+    session.commit()
+    session.refresh(meal)
+    
     # Reload with ingredients
     meal = session.exec(select(Meal).where(Meal.id == meal.id)).first()
     return MealReadDetail.model_validate(meal)

@@ -25,6 +25,7 @@ A comprehensive FastAPI-based backend for diabetes management and blood sugar an
 ### Key Features
 - **User Management**: Registration, authentication, profile management
 - **Data Tracking**: Meals, activities, glucose readings, insulin doses, condition logs
+- **Predefined Meal System**: Template-based meal creation with quantity and weight adjustments
 - **Advanced Analytics**: 10 comprehensive analytics endpoints
 - **Admin System**: Complete user and system management
 - **Data Import**: CGM CSV upload functionality
@@ -136,6 +137,8 @@ python -m pytest tests/ --cov=app --cov-report=html
 
 #### Data Management
 - `GET/POST /meals` - Meal management
+- `GET/POST /meals/from-predefined` - Create meals from predefined templates
+- `GET/POST /predefined-meals` - Predefined meal template management (admin)
 - `GET/POST /activities` - Activity tracking
 - `GET/POST /glucose-readings` - Glucose monitoring
 - `GET/POST /insulin-doses` - Insulin tracking

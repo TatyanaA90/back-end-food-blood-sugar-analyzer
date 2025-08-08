@@ -28,6 +28,13 @@
         - [x] User count monitoring for administrators via /users/stats/count endpoint
         - [x] Safety features and permission controls
 - [x] Implement CRUD endpoints for Meals, including business logic (auto-calculate totals, permissions, cascade delete ingredients, admin/user access control, response models for list/detail).
+- [x] Implement Predefined Meal System with template-based meal creation, quantity scaling, and weight adjustments.
+    - [x] Create PredefinedMeal and PredefinedMealIngredient models
+    - [x] Implement admin-only template management endpoints
+    - [x] Add meal creation from predefined templates with quantity (1-10) and weight adjustments
+    - [x] Implement live nutrition calculation based on user adjustments
+    - [x] Add template protection (cannot delete templates in use)
+    - [x] Create comprehensive frontend components for template selection and customization
 - [x] Implement CRUD endpoints for Activities, including MET-based calories burned auto-calculation, weight tracking (kg/lb), permissions, and response models.
 - [x] Implement CRUD endpoints for ConditionLogs, including standard business logic, permissions, and response models.
 - [x] Implement CRUD endpoints for InsulinDoses, GlucoseReadings, including units for InsulinDose and value/unit for GlucoseReading.
