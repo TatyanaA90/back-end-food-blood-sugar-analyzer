@@ -6,7 +6,7 @@ import os
 # Import your app's config and models
 from app.core.config import settings
 from sqlmodel import SQLModel
-from app.models import user, glucose_reading, meal, meal_ingredient, insulin_dose, activity, condition_log
+from app.models import user, glucose_reading, meal, meal_ingredient, insulin_dose, activity, condition_log, predefined_meal, predefined_meal_ingredient
 
 config = context.config
 

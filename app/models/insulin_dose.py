@@ -9,6 +9,8 @@ class InsulinDose(Base, table=True):
     timestamp: Optional[datetime] = None
     units: float
     type: Optional[str] = None
+    meal_context: Optional[str] = None  # Breakfast, Lunch, Dinner, Snack, Dessert, Beverage, Other
+    note: Optional[str] = None
     related_meal_id: Optional[int] = Field(default=None, foreign_key="meals.id")
 
     user: "User" = Relationship(back_populates="insulin_doses")
