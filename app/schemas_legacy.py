@@ -23,6 +23,7 @@ class MealIngredientRead(MealIngredientBase):
 # Meal Schemas
 class MealBase(BaseModel):
     description: Optional[str] = None
+    meal_type: Optional[str] = None  # Breakfast, Lunch, Dinner, Snack, Dessert, Beverage
     total_weight: Optional[float] = None
     total_carbs: Optional[float] = None
     glycemic_index: Optional[float] = None

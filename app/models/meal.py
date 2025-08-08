@@ -8,6 +8,7 @@ class Meal(Base, table=True):
     user_id: int = Field(foreign_key="users.id")
     timestamp: Optional[datetime] = None
     description: Optional[str] = None
+    meal_type: Optional[str] = None  # Breakfast, Lunch, Dinner, Snack, Dessert, Beverage
     total_weight: Optional[float] = None  # sum of ingredient weights
     total_carbs: Optional[float] = None   # sum of ingredient carbs
     glycemic_index: Optional[float] = None
