@@ -123,7 +123,11 @@ def reset_password(reset_data: PasswordReset, session: Session = Depends(get_ses
     """Reset password using reset token."""
     user = session.exec(select(User).where(User.reset_token == reset_data.token)).first()
     
-    if not user or not user.reset_token_expires or user.reset_token_expires < datetime.now(UTC):
+    current_time = datetime.now(UTC)
+    # Ensure reset_token_expires is timezone-aware
+    if user.reset_token_expires and user.reset_token_expires.tzinfo is None:
+        user.reset_token_expires = user.reset_token_expires.replace(tzinfo=UTC)
+    if not user or not user.reset_token_expires or user.reset_token_expires < current_time:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     
     # Update password
