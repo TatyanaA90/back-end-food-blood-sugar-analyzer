@@ -58,6 +58,8 @@ A comprehensive FastAPI-based backend for diabetes management and blood sugar an
 6. **Activity Impact**: Exercise effects on glucose
 7. **Insulin-Glucose Correlation**: Personalized insulin effectiveness
 8. **Recommendations**: AI-enhanced insights and tips
+9. **Time in Range**: Percentage of time spent in clinical glucose ranges (very low, low, in range, high, very high)
+10. **AGP Overlay**: Ambulatory Glucose Profile overlay by time of day (median and percentiles)
 
 ## 🛠️ Installation & Setup
 
