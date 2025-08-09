@@ -32,6 +32,7 @@ def create_meal(meal_in: MealCreate, session: Session = Depends(get_session), cu
     assert current_user.id is not None, "User ID must not be None"
     meal = Meal(
         description=meal_in.description,
+        meal_type=meal_in.meal_type,
         total_weight=total_weight,
         total_carbs=total_carbs,
         glycemic_index=meal_in.glycemic_index,
@@ -120,6 +121,7 @@ def create_meal_from_predefined(
     assert current_user.id is not None, "User ID must not be None"
     meal = Meal(
         description=predefined_meal.name,
+        meal_type=predefined_meal.category or "Meal",  # Use category as meal_type or default to "Meal"
         total_weight=total_weight_per_portion,
         total_carbs=total_carbs_per_portion,
         note=meal_data.note,
