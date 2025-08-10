@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlmodel import Session
+from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.glucose_reading import GlucoseReading
 from app.models.user import User
 from app.core.security import get_current_user
 from typing import List
-from datetime import datetime
+from datetime import datetime, UTC
 import csv
 import io
 
@@ -42,13 +42,26 @@ async def upload_cgm_csv(
             # Combine DAY and TIME, parse as DD.MM.YYYY HH:MM
             try:
                 dt_str = f"{row['DAY']} {row['TIME']}"
-                timestamp = datetime.strptime(dt_str, "%d.%m.%Y %H:%M")
+                # Treat CSV times as UTC to avoid browser-local shift on the client
+                timestamp = datetime.strptime(dt_str, "%d.%m.%Y %H:%M").replace(tzinfo=UTC)
             except Exception:
                 skipped += 1
                 errors.append(f"Row {idx}: Invalid DAY/TIME '{dt_str}'.")
                 continue
             unit = "mg/dl"  # Assume mg/dl
             note = row.get("REMARK")
+
+            # Skip duplicates for the same user/timestamp
+            existing = session.exec(
+                select(GlucoseReading).where(
+                    GlucoseReading.user_id == int(current_user.id),
+                    GlucoseReading.timestamp == timestamp,
+                )
+            ).first()
+            if existing:
+                skipped += 1
+                continue
+
             reading = GlucoseReading(
                 user_id=int(current_user.id),
                 value=value,

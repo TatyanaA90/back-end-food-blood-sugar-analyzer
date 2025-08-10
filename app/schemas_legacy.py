@@ -32,7 +32,8 @@ class MealBase(BaseModel):
     timestamp: Optional[datetime] = None
 
 class MealCreate(MealBase):
-    ingredients: List[MealIngredientCreate]
+    # Make ingredients optional for simpler meal creation flows used by visualization tests
+    ingredients: Optional[List[MealIngredientCreate]] = None
 
 class MealUpdate(MealBase):
     ingredients: Optional[List[MealIngredientCreate]] = None
@@ -51,7 +52,7 @@ class ActivityBase(BaseModel):
     duration_min: Optional[int] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    timestamp: Optional[datetime] = None 
+    timestamp: Optional[datetime] = None
     note: Optional[str] = None
 
 class ActivityCreate(ActivityBase):
@@ -92,6 +93,9 @@ class ConditionLogReadDetail(ConditionLogReadBasic):
 class InsulinDoseBase(BaseModel):
     units: float
     timestamp: Optional[datetime] = None
+    # Align with frontend: allow optional meal_context and insulin type
+    meal_context: Optional[str] = None
+    type: Optional[str] = None
     note: Optional[str] = None
 
 class InsulinDoseCreate(InsulinDoseBase):

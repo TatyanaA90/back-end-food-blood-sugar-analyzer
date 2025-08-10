@@ -15,7 +15,6 @@ class AdminLoginResponse(BaseModel):
 
 # Admin User Management Schemas
 class AdminPasswordReset(BaseModel):
-    user_id: int
     new_password: str
 
 class UserCount(BaseModel):
@@ -117,4 +116,4 @@ class AdminAuditLog(BaseModel):
     target_user_id: Optional[int] = None
     target_username: Optional[str] = None
     details: Dict[str, Any]
-    timestamp: datetime 
+    timestamp: datetime

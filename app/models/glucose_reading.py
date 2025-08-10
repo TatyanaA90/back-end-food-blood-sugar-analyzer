@@ -15,4 +15,4 @@ class GlucoseReading(Base, table=True):
     user: "User" = Relationship(back_populates="glucose_readings")
 
 if TYPE_CHECKING:
-    from .user import User 
+    from .user import User

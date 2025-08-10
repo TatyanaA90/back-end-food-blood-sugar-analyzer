@@ -18,4 +18,4 @@ class InsulinDose(Base, table=True):
 
 if TYPE_CHECKING:
     from .user import User
-    from .meal import Meal 
+    from .meal import Meal

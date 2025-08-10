@@ -120,7 +120,7 @@ def glucose_trend(
     window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
-    # moving_avg: smooths out short-term spikes to show the overall trend. 
+    # moving_avg: smooths out short-term spikes to show the overall trend.
     # This helps to see the "big picture" rather than getting distracted by every little up and down.
     moving_avg: Optional[int] = Query(None, description="Window size for moving average (in readings)"),
     session: Session = Depends(get_session),
@@ -335,10 +335,10 @@ def time_in_range(
     if end:
         query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     readings = session.exec(query).all()
-    
+
     # Filter valid readings
     valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
-    
+
     if not valid_readings:
         return {
             "time_in_range": {
@@ -368,7 +368,7 @@ def time_in_range(
     in_range_count = 0
     high_count = 0
     very_high_count = 0
-    
+
     for reading in valid_readings:
         value = reading.value
         if value < very_low_threshold:
@@ -381,9 +381,9 @@ def time_in_range(
             high_count += 1
         else:  # value > high_threshold
             very_high_count += 1
-    
+
     total_readings = len(valid_readings)
-    
+
     # Calculate percentages or absolute values based on show_percentage parameter
     if show_percentage:
         time_in_range_data = {
@@ -401,7 +401,7 @@ def time_in_range(
             "high": high_count,
             "very_high": very_high_count
         }
-    
+
     # Add raw counts for additional context
     counts = {
         "very_low": very_low_count,
@@ -410,7 +410,7 @@ def time_in_range(
         "high": high_count,
         "very_high": very_high_count
     }
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
@@ -424,7 +424,7 @@ def time_in_range(
         "show_percentage": show_percentage,
         "total_readings": total_readings
     }
-    
+
     return {
         "time_in_range": time_in_range_data,
         "counts": counts,
@@ -474,10 +474,10 @@ def glucose_variability(
     if end:
         query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     readings = session.exec(query).all()
-    
+
     # Filter valid readings
     valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
-    
+
     if len(valid_readings) < 2:
         return {
             "variability_metrics": {
@@ -501,18 +501,18 @@ def glucose_variability(
     # Extract glucose values
     values = [r.value for r in valid_readings]
     mean_value = sum(values) / len(values)
-    
+
     # Calculate Standard Deviation (SD)
     variance = sum((x - mean_value) ** 2 for x in values) / len(values)
     standard_deviation = variance ** 0.5
-    
+
     # Calculate Coefficient of Variation (CV) - SD as percentage of mean
     coefficient_of_variation = (standard_deviation / mean_value) * 100 if mean_value > 0 else 0
-    
+
     # Calculate Glucose Management Indicator (GMI) - estimated A1C equivalent
     # Formula: GMI = 3.31 + 0.02392 × mean glucose (mg/dl)
     glucose_management_indicator = 3.31 + (0.02392 * mean_value)
-    
+
     # Prepare response
     variability_metrics = {
         "standard_deviation": round(standard_deviation, 2),
@@ -523,7 +523,7 @@ def glucose_variability(
         "max_glucose": max(values),
         "total_readings": len(values)
     }
-    
+
     # Add plain-language explanations if requested
     explanations = {}
     if include_explanations:
@@ -536,7 +536,7 @@ def glucose_variability(
             sd_explanation = "Fair. Your blood sugar has some variability that could be improved."
         else:
             sd_explanation = "High variability detected. Consider discussing with your healthcare provider."
-        
+
         # CV explanations
         if coefficient_of_variation < 20:
             cv_explanation = "Great stability! Your blood sugar changes very little compared to your average."
@@ -546,7 +546,7 @@ def glucose_variability(
             cv_explanation = "Moderate variability. Your blood sugar changes more than ideal."
         else:
             cv_explanation = "High variability. Your blood sugar changes significantly compared to your average."
-        
+
         # GMI explanations
         if glucose_management_indicator < 6.5:
             gmi_explanation = f"Excellent control! Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
@@ -556,43 +556,43 @@ def glucose_variability(
             gmi_explanation = f"Fair control. Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
         else:
             gmi_explanation = f"Needs improvement. Your estimated A1C equivalent is {glucose_management_indicator:.1f}% (target is <7.0%)."
-        
+
         explanations = {
             "standard_deviation": sd_explanation,
             "coefficient_of_variation": cv_explanation,
             "glucose_management_indicator": gmi_explanation,
             "overall_assessment": _get_overall_assessment(standard_deviation, coefficient_of_variation, glucose_management_indicator)
         }
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
         "total_readings": len(valid_readings),
         "include_explanations": include_explanations
     }
-    
+
     result = {
         "variability_metrics": variability_metrics,
         "meta": meta
     }
-    
+
     if include_explanations:
         result["explanations"] = explanations
-    
+
     return result
 
 def _get_overall_assessment(sd: float, cv: float, gmi: float) -> str:
     """Generate overall assessment based on all metrics."""
     good_metrics = 0
     total_metrics = 3
-    
+
     if sd < 30:
         good_metrics += 1
     if cv < 30:
         good_metrics += 1
     if gmi < 7.0:
         good_metrics += 1
-    
+
     if good_metrics == 3:
         return "Excellent overall glucose control! Keep up the great work."
     elif good_metrics == 2:
@@ -647,11 +647,11 @@ def glucose_events(
     if end:
         query = query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     readings = session.exec(query).all()
-    
+
     # Filter valid readings and sort by timestamp
     valid_readings = [r for r in readings if r.value is not None and r.timestamp is not None]
     valid_readings.sort(key=lambda r: r.timestamp)
-    
+
     if len(valid_readings) < 2:
         return {
             "events": [],
@@ -667,11 +667,11 @@ def glucose_events(
 
     events = []
     current_event = None
-    
+
     for i, reading in enumerate(valid_readings):
         value = reading.value
         timestamp = reading.timestamp
-        
+
         # Determine if this reading is in hypo or hyper range
         if value < hypo_threshold:
             event_type = "hypo"
@@ -685,7 +685,7 @@ def glucose_events(
                 events.append(current_event)
                 current_event = None
             continue
-        
+
         # Check if we should start a new event
         if current_event is None:
             # Start new event
@@ -702,7 +702,7 @@ def glucose_events(
             current_event["max_value"] = max(current_event["max_value"], value)
             current_event["min_value"] = min(current_event["min_value"], value)
             current_event["num_readings"] += 1
-            
+
             # Check if gap is too large (start new event)
             if i > 0:
                 time_diff = (timestamp - valid_readings[i-1].timestamp).total_seconds() / 60
@@ -711,7 +711,7 @@ def glucose_events(
                     current_event["end"] = valid_readings[i-1].timestamp.isoformat()
                     current_event["duration_minutes"] = int((valid_readings[i-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
                     events.append(current_event)
-                    
+
                     # Start new event
                     current_event = {
                         "type": event_type,
@@ -726,7 +726,7 @@ def glucose_events(
             current_event["end"] = valid_readings[i-1].timestamp.isoformat()
             current_event["duration_minutes"] = int((valid_readings[i-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
             events.append(current_event)
-            
+
             # Start new event
             current_event = {
                 "type": event_type,
@@ -736,17 +736,17 @@ def glucose_events(
                 "max_value": value,
                 "num_readings": 1
             }
-    
+
     # Handle last event if it exists
     if current_event:
         current_event["end"] = valid_readings[-1].timestamp.isoformat()
         current_event["duration_minutes"] = int((valid_readings[-1].timestamp - current_event["start_dt"]).total_seconds() / 60)
         events.append(current_event)
-    
+
     # Remove internal datetime object from events
     for event in events:
         del event["start_dt"]
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
@@ -756,7 +756,7 @@ def glucose_events(
         "total_readings": len(valid_readings),
         "total_events": len(events)
     }
-    
+
     return {
         "events": events,
         "meta": meta
@@ -767,6 +767,8 @@ def meal_impact(
     window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    start_datetime: Optional[datetime] = Query(None, description="Start datetime (ISO 8601, UTC preferred)"),
+    end_datetime: Optional[datetime] = Query(None, description="End datetime (ISO 8601, UTC preferred)"),
     group_by: str = Query("time_of_day", description="Group by 'meal_type' or 'time_of_day'"),
     pre_meal_minutes: int = Query(30, description="Minutes before meal to look for glucose reading"),
     post_meal_minutes: int = Query(120, description="Minutes after meal to look for glucose reading"),
@@ -777,9 +779,13 @@ def meal_impact(
     Returns average glucose change after meals, grouped by meal type or time of day.
     Analyzes glucose readings before and after meals to show impact on blood sugar.
     """
-    # Determine date range based on window
+    # Determine date/time range based on window or explicit datetimes
     now = datetime.now(UTC)
-    if window == "day":
+    if start_datetime or end_datetime:
+        # Frontend always sends UTC datetimes, so we can use them directly
+        start = start_datetime
+        end = end_datetime
+    elif window == "day":
         start = now.date()
         end = now.date()
     elif window == "week":
@@ -804,17 +810,21 @@ def meal_impact(
     if group_by not in ["meal_type", "time_of_day"]:
         raise HTTPException(status_code=400, detail="group_by must be 'meal_type' or 'time_of_day'")
 
-    # Query meals for the user in the date range
+    # Query meals for the user in the date/time range
     meal_query = select(Meal).where(Meal.user_id == current_user.id)
-    if start:
+    if isinstance(start, datetime):
+        meal_query = meal_query.where(Meal.timestamp >= start)
+    elif start:
         meal_query = meal_query.where(Meal.timestamp >= datetime.combine(start, datetime.min.time()))
-    if end:
+    if isinstance(end, datetime):
+        meal_query = meal_query.where(Meal.timestamp <= end)
+    elif end:
         meal_query = meal_query.where(Meal.timestamp <= datetime.combine(end, datetime.max.time()))
     meals = session.exec(meal_query).all()
-    
+
     # Filter valid meals with timestamps
     valid_meals = [m for m in meals if m.timestamp is not None]
-    
+
     if not valid_meals:
         return {
             "meal_impacts": [],
@@ -830,12 +840,16 @@ def meal_impact(
 
     # Query all glucose readings for the user in the date range
     glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
-    if start:
+    if isinstance(start, datetime):
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= start)
+    elif start:
         glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
-    if end:
+    if isinstance(end, datetime):
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= end)
+    elif end:
         glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     glucose_readings = session.exec(glucose_query).all()
-    
+
     # Filter valid glucose readings and ensure timezone awareness
     valid_readings = []
     for r in glucose_readings:
@@ -848,13 +862,13 @@ def meal_impact(
             elif reading_time.tzinfo != UTC:
                 # Convert to UTC if it's in a different timezone
                 reading_time = reading_time.astimezone(UTC)
-            
+
             # Store the timezone-aware timestamp for comparison
             r._timezone_aware_timestamp = reading_time
             valid_readings.append(r)
-    
+
     valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
-    
+
     if not valid_readings:
         return {
             "meal_impacts": [],
@@ -871,7 +885,7 @@ def meal_impact(
     # Analyze each meal
     meal_impacts = []
     total_meals_analyzed = 0
-    
+
     for meal in valid_meals:
         meal_time = meal.timestamp
         # Ensure meal_time is timezone-aware and convert to UTC if needed
@@ -881,25 +895,25 @@ def meal_impact(
         elif meal_time and meal_time.tzinfo != UTC:
             # Convert to UTC if it's in a different timezone
             meal_time = meal_time.astimezone(UTC)
-        
+
         # Find pre-meal glucose reading (closest reading within pre_meal_minutes before meal)
         pre_meal_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp <= meal_time and (meal_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_meal_minutes:
                 if pre_meal_reading is None or reading._timezone_aware_timestamp > pre_meal_reading._timezone_aware_timestamp:
                     pre_meal_reading = reading
-        
+
         # Find post-meal glucose reading (closest reading within post_meal_minutes after meal)
         post_meal_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp >= meal_time and (reading._timezone_aware_timestamp - meal_time).total_seconds() / 60 <= post_meal_minutes:
                 if post_meal_reading is None or reading._timezone_aware_timestamp < post_meal_reading._timezone_aware_timestamp:
                     post_meal_reading = reading
-        
+
         # Only analyze if we have both pre and post readings
         if pre_meal_reading and post_meal_reading:
             glucose_change = post_meal_reading.value - pre_meal_reading.value
-            
+
             # Determine group based on group_by parameter
             if group_by == "meal_type":
                 # Since Meal model doesn't have meal_type field, we'll derive it from description or time
@@ -945,7 +959,7 @@ def meal_impact(
                     group = "dinner"
                 else:
                     group = "snack"
-            
+
             meal_impacts.append({
                 "group": group,
                 "glucose_change": glucose_change,
@@ -956,7 +970,7 @@ def meal_impact(
                 "post_meal_timestamp": post_meal_reading._timezone_aware_timestamp.isoformat()
             })
             total_meals_analyzed += 1
-    
+
     # Group and calculate statistics
     grouped_impacts = {}
     for impact in meal_impacts:
@@ -964,18 +978,18 @@ def meal_impact(
         if group not in grouped_impacts:
             grouped_impacts[group] = []
         grouped_impacts[group].append(impact)
-    
+
     # Calculate averages for each group
     result_impacts = []
     for group, impacts in grouped_impacts.items():
         glucose_changes = [impact["glucose_change"] for impact in impacts]
         pre_meal_values = [impact["pre_meal_glucose"] for impact in impacts]
         post_meal_values = [impact["post_meal_glucose"] for impact in impacts]
-        
+
         avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
         avg_pre_meal = sum(pre_meal_values) / len(pre_meal_values)
         avg_post_meal = sum(post_meal_values) / len(post_meal_values)
-        
+
         # Calculate standard deviation
         if len(glucose_changes) > 1:
             mean_change = sum(glucose_changes) / len(glucose_changes)
@@ -983,7 +997,7 @@ def meal_impact(
             std_dev_change = variance ** 0.5
         else:
             std_dev_change = 0.0
-        
+
         result_impacts.append({
             "group": group,
             "avg_glucose_change": round(avg_glucose_change, 2),
@@ -992,10 +1006,10 @@ def meal_impact(
             "avg_post_meal": round(avg_post_meal, 2),
             "std_dev_change": round(std_dev_change, 2)
         })
-    
+
     # Sort by group name for consistent output
     result_impacts.sort(key=lambda x: x["group"])
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
@@ -1004,7 +1018,7 @@ def meal_impact(
         "post_meal_minutes": post_meal_minutes,
         "total_meals_analyzed": total_meals_analyzed
     }
-    
+
     return {
         "meal_impacts": result_impacts,
         "meta": meta
@@ -1060,10 +1074,10 @@ def activity_impact(
     if end:
         activity_query = activity_query.where(Activity.timestamp <= datetime.combine(end, datetime.max.time()))
     activities = session.exec(activity_query).all()
-    
+
     # Filter valid activities with timestamps
     valid_activities = [a for a in activities if a.timestamp is not None]
-    
+
     if not valid_activities:
         return {
             "activity_impacts": [],
@@ -1084,7 +1098,7 @@ def activity_impact(
     if end:
         glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     glucose_readings = session.exec(glucose_query).all()
-    
+
     # Filter valid glucose readings and ensure timezone awareness
     valid_readings = []
     for reading in glucose_readings:
@@ -1097,13 +1111,13 @@ def activity_impact(
             elif reading_time.tzinfo != UTC:
                 # Convert to UTC if it's in a different timezone
                 reading_time = reading_time.astimezone(UTC)
-            
+
             # Store the timezone-aware timestamp for comparison
             reading._timezone_aware_timestamp = reading_time
             valid_readings.append(reading)
-    
+
     valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
-    
+
     if not valid_readings:
         return {
             "activity_impacts": [],
@@ -1120,7 +1134,7 @@ def activity_impact(
     # Analyze each activity
     activity_impacts = []
     total_activities_analyzed = 0
-    
+
     for activity in valid_activities:
         # Use start_time if available, otherwise fall back to timestamp
         activity_time = activity.start_time or activity.timestamp
@@ -1131,24 +1145,24 @@ def activity_impact(
         elif activity_time and activity_time.tzinfo != UTC:
             # Convert to UTC if it's in a different timezone
             activity_time = activity_time.astimezone(UTC)
-        
+
         # Find pre-activity glucose reading (closest reading within pre_activity_minutes before activity)
         pre_activity_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp <= activity_time and (activity_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_activity_minutes:
                 if pre_activity_reading is None or reading._timezone_aware_timestamp > pre_activity_reading._timezone_aware_timestamp:
                     pre_activity_reading = reading
-        
+
         # Find post-activity glucose reading (closest reading within post_activity_minutes after activity)
         post_activity_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp >= activity_time and (reading._timezone_aware_timestamp - activity_time).total_seconds() / 60 <= post_activity_minutes:
                 if post_activity_reading is None or reading._timezone_aware_timestamp < post_activity_reading._timezone_aware_timestamp:
                     post_activity_reading = reading
-        
+
         if pre_activity_reading and post_activity_reading:
             glucose_change = post_activity_reading.value - pre_activity_reading.value
-            
+
             # Determine group based on group_by parameter
             if group_by == "activity_type":
                 # Use activity type from the activity record
@@ -1167,7 +1181,7 @@ def activity_impact(
                         group = "unknown"
                 else:
                     group = "unknown"
-            
+
             activity_impacts.append({
                 "group": group,
                 "glucose_change": glucose_change,
@@ -1180,7 +1194,7 @@ def activity_impact(
                 "calories_burned": activity.calories_burned
             })
             total_activities_analyzed += 1
-    
+
     # Group and calculate statistics
     grouped_impacts = {}
     for impact in activity_impacts:
@@ -1188,18 +1202,18 @@ def activity_impact(
         if group not in grouped_impacts:
             grouped_impacts[group] = []
         grouped_impacts[group].append(impact)
-    
+
     # Calculate averages for each group
     result_impacts = []
     for group, impacts in grouped_impacts.items():
         glucose_changes = [impact["glucose_change"] for impact in impacts]
         pre_activity_values = [impact["pre_activity_glucose"] for impact in impacts]
         post_activity_values = [impact["post_activity_glucose"] for impact in impacts]
-        
+
         avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
         avg_pre_activity = sum(pre_activity_values) / len(pre_activity_values)
         avg_post_activity = sum(post_activity_values) / len(post_activity_values)
-        
+
         # Calculate standard deviation
         if len(glucose_changes) > 1:
             mean_change = sum(glucose_changes) / len(glucose_changes)
@@ -1207,11 +1221,11 @@ def activity_impact(
             std_dev_change = variance ** 0.5
         else:
             std_dev_change = 0.0
-        
+
         # Calculate average duration and calories for this group
         avg_duration = sum(impact["activity_duration"] for impact in impacts if impact["activity_duration"]) / len([impact for impact in impacts if impact["activity_duration"]]) if any(impact["activity_duration"] for impact in impacts) else None
         avg_calories = sum(impact["calories_burned"] for impact in impacts if impact["calories_burned"]) / len([impact for impact in impacts if impact["calories_burned"]]) if any(impact["calories_burned"] for impact in impacts) else None
-        
+
         result_impacts.append({
             "group": group,
             "avg_glucose_change": round(avg_glucose_change, 2),
@@ -1222,10 +1236,10 @@ def activity_impact(
             "avg_duration_minutes": round(avg_duration, 1) if avg_duration else None,
             "avg_calories_burned": round(avg_calories, 1) if avg_calories else None
         })
-    
+
     # Sort by group name for consistent output
     result_impacts.sort(key=lambda x: x["group"])
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
@@ -1234,7 +1248,7 @@ def activity_impact(
         "post_activity_minutes": post_activity_minutes,
         "total_activities_analyzed": total_activities_analyzed
     }
-    
+
     return {
         "activity_impacts": result_impacts,
         "meta": meta
@@ -1246,6 +1260,8 @@ def insulin_glucose_correlation(
     window: Optional[str] = Query(None, description="Predefined window: day, week, month, 3months, custom"),
     start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
+    start_datetime: Optional[datetime] = Query(None, description="Start datetime (ISO 8601, UTC preferred)"),
+    end_datetime: Optional[datetime] = Query(None, description="End datetime (ISO 8601, UTC preferred)"),
     group_by: str = Query("dose_range", description="Group by 'dose_range', 'time_of_day', or 'insulin_effectiveness'"),
     pre_insulin_minutes: int = Query(30, description="Minutes before insulin to look for glucose reading"),
     post_insulin_minutes: int = Query(180, description="Minutes after insulin to look for glucose reading"),
@@ -1256,9 +1272,13 @@ def insulin_glucose_correlation(
     Returns correlation analysis between insulin doses and glucose changes.
     Analyzes how insulin doses affect glucose levels for personalized insights.
     """
-    # Determine date range based on window
+    # Determine date/time range based on window or explicit datetimes
     now = datetime.now(UTC)
-    if window == "day":
+    if start_datetime or end_datetime:
+        # Frontend always sends UTC datetimes, so we can use them directly
+        start = start_datetime
+        end = end_datetime
+    elif window == "day":
         start = now.date()
         end = now.date()
     elif window == "week":
@@ -1285,15 +1305,19 @@ def insulin_glucose_correlation(
 
     # Query insulin doses for the user in the date range
     insulin_query = select(InsulinDose).where(InsulinDose.user_id == current_user.id)
-    if start:
+    if isinstance(start, datetime):
+        insulin_query = insulin_query.where(InsulinDose.timestamp >= start)
+    elif start:
         insulin_query = insulin_query.where(InsulinDose.timestamp >= datetime.combine(start, datetime.min.time()))
-    if end:
+    if isinstance(end, datetime):
+        insulin_query = insulin_query.where(InsulinDose.timestamp <= end)
+    elif end:
         insulin_query = insulin_query.where(InsulinDose.timestamp <= datetime.combine(end, datetime.max.time()))
     insulin_doses = session.exec(insulin_query).all()
-    
+
     # Filter valid insulin doses with timestamps
     valid_doses = [d for d in insulin_doses if d.timestamp is not None and d.units > 0]
-    
+
     if not valid_doses:
         return {
             "correlations": [],
@@ -1314,31 +1338,28 @@ def insulin_glucose_correlation(
 
     # Query all glucose readings for the user in the date range
     glucose_query = select(GlucoseReading).where(GlucoseReading.user_id == current_user.id)
-    if start:
+    if isinstance(start, datetime):
+        glucose_query = glucose_query.where(GlucoseReading.timestamp >= start)
+    elif start:
         glucose_query = glucose_query.where(GlucoseReading.timestamp >= datetime.combine(start, datetime.min.time()))
-    if end:
+    if isinstance(end, datetime):
+        glucose_query = glucose_query.where(GlucoseReading.timestamp <= end)
+    elif end:
         glucose_query = glucose_query.where(GlucoseReading.timestamp <= datetime.combine(end, datetime.max.time()))
     glucose_readings = session.exec(glucose_query).all()
-    
-    # Filter valid glucose readings and ensure timezone awareness
+
+    # Filter valid glucose readings
     valid_readings = []
     for reading in glucose_readings:
         if reading.value is not None and reading.timestamp is not None:
-            # Ensure reading timestamp is timezone-aware
+            # Database timestamps are already timezone-aware UTC
             reading_time = reading.timestamp
-            if reading_time.tzinfo is None:
-                # If naive datetime, assume it's in UTC
-                reading_time = reading_time.replace(tzinfo=UTC)
-            elif reading_time.tzinfo != UTC:
-                # Convert to UTC if it's in a different timezone
-                reading_time = reading_time.astimezone(UTC)
-            
-            # Store the timezone-aware timestamp for comparison
+            # Store the timestamp for comparison
             reading._timezone_aware_timestamp = reading_time
             valid_readings.append(reading)
-    
+
     valid_readings.sort(key=lambda r: r._timezone_aware_timestamp)
-    
+
     if not valid_readings:
         return {
             "correlations": [],
@@ -1360,38 +1381,32 @@ def insulin_glucose_correlation(
     # Analyze each insulin dose
     dose_glucose_pairs = []
     total_doses_analyzed = 0
-    
+
     for dose in valid_doses:
         dose_time = dose.timestamp
-        # Ensure dose_time is timezone-aware and convert to UTC if needed
-        if dose_time and dose_time.tzinfo is None:
-            # If naive datetime, assume it's in UTC
-            dose_time = dose_time.replace(tzinfo=UTC)
-        elif dose_time and dose_time.tzinfo != UTC:
-            # Convert to UTC if it's in a different timezone
-            dose_time = dose_time.astimezone(UTC)
-        
+        # Database timestamps are already timezone-aware UTC
+
         # Find pre-insulin glucose reading (closest reading within pre_insulin_minutes before dose)
         pre_insulin_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp <= dose_time and (dose_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= pre_insulin_minutes:
                 if pre_insulin_reading is None or reading._timezone_aware_timestamp > pre_insulin_reading._timezone_aware_timestamp:
                     pre_insulin_reading = reading
-        
+
         # Find post-insulin glucose reading (closest reading within post_insulin_minutes after dose)
         post_insulin_reading = None
         for reading in valid_readings:
             if reading._timezone_aware_timestamp >= dose_time and (reading._timezone_aware_timestamp - dose_time).total_seconds() / 60 <= post_insulin_minutes:
                 if post_insulin_reading is None or reading._timezone_aware_timestamp < post_insulin_reading._timezone_aware_timestamp:
                     post_insulin_reading = reading
-        
+
         if pre_insulin_reading and post_insulin_reading:
             glucose_change = post_insulin_reading.value - pre_insulin_reading.value
             insulin_sensitivity = glucose_change / dose.units if dose.units > 0 else 0
-            
+
             # Calculate response time (minutes from dose to post-insulin reading)
             response_time = (post_insulin_reading._timezone_aware_timestamp - dose_time).total_seconds() / 60
-            
+
             # Determine group based on group_by parameter
             if group_by == "dose_range":
                 if dose.units <= 2:
@@ -1417,7 +1432,7 @@ def insulin_glucose_correlation(
                     group = "medium_sensitivity"
                 else:
                     group = "low_sensitivity"
-            
+
             dose_glucose_pairs.append({
                 "group": group,
                 "insulin_units": dose.units,
@@ -1431,7 +1446,7 @@ def insulin_glucose_correlation(
                 "post_glucose_timestamp": post_insulin_reading._timezone_aware_timestamp.isoformat()
             })
             total_doses_analyzed += 1
-    
+
     if not dose_glucose_pairs:
         return {
             "correlations": [],
@@ -1457,37 +1472,37 @@ def insulin_glucose_correlation(
         if group not in grouped_pairs:
             grouped_pairs[group] = []
         grouped_pairs[group].append(pair)
-    
+
     # Calculate correlations for each group
     correlations = []
     all_sensitivities = []
-    
+
     for group, pairs in grouped_pairs.items():
         # Allow single pairs for basic analysis, but note limited correlation
         if len(pairs) < 1:
             continue
-        
+
         insulin_units = [pair["insulin_units"] for pair in pairs]
         glucose_changes = [pair["glucose_change"] for pair in pairs]
         sensitivities = [pair["insulin_sensitivity"] for pair in pairs]
         response_times = [pair["response_time_minutes"] for pair in pairs]
-        
+
         # Calculate averages
         avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
         avg_insulin_units = sum(insulin_units) / len(insulin_units)
         avg_sensitivity = sum(sensitivities) / len(sensitivities)
         avg_response_time = sum(response_times) / len(response_times)
-        
+
         # Calculate correlation coefficient (simplified Pearson correlation)
         if len(pairs) > 1:
             # Calculate correlation between insulin units and glucose change
             mean_units = sum(insulin_units) / len(insulin_units)
             mean_change = sum(glucose_changes) / len(glucose_changes)
-            
+
             numerator = sum((u - mean_units) * (g - mean_change) for u, g in zip(insulin_units, glucose_changes))
             denominator_units = sum((u - mean_units) ** 2 for u in insulin_units)
             denominator_change = sum((g - mean_change) ** 2 for g in glucose_changes)
-            
+
             if denominator_units > 0 and denominator_change > 0:
                 correlation_coefficient = numerator / (denominator_units * denominator_change) ** 0.5
             else:
@@ -1495,7 +1510,7 @@ def insulin_glucose_correlation(
         else:
             # For single pairs, correlation is not meaningful
             correlation_coefficient = None
-        
+
         # Calculate standard deviation
         if len(glucose_changes) > 1:
             mean_change = sum(glucose_changes) / len(glucose_changes)
@@ -1503,16 +1518,16 @@ def insulin_glucose_correlation(
             std_dev_change = variance ** 0.5
         else:
             std_dev_change = 0.0
-        
+
         # Calculate effectiveness score (0-1, higher is better)
         # Based on glucose drop, consistency, and response time
         glucose_drop_score = min(abs(avg_glucose_change) / 50.0, 1.0)  # Normalize to 50 mg/dl drop
         consistency_score = max(1.0 - (std_dev_change / 30.0), 0.0) if std_dev_change is not None else 0.5  # Lower std dev is better
         response_time_score = max(1.0 - (avg_response_time - 45) / 60.0, 0.0)  # 45 min is optimal
-        
+
         effectiveness_score = (glucose_drop_score * 0.4 + consistency_score * 0.3 + response_time_score * 0.3)
         effectiveness_score = max(0.0, min(1.0, effectiveness_score))  # Clamp to 0-1
-        
+
         correlations.append({
             "group": group,
             "avg_glucose_change": round(avg_glucose_change, 2),
@@ -1524,20 +1539,20 @@ def insulin_glucose_correlation(
             "correlation_coefficient": correlation_coefficient,
             "std_dev_change": std_dev_change
         })
-        
+
         all_sensitivities.extend(sensitivities)
-    
+
     # Sort by group name for consistent output
     correlations.sort(key=lambda x: x["group"])
-    
+
     # Calculate overall analysis
     overall_avg_sensitivity = sum(all_sensitivities) / len(all_sensitivities) if all_sensitivities else None
-    
+
     # Find most effective dose range
     most_effective_group = None
     if correlations:
         most_effective_group = max(correlations, key=lambda x: x["effectiveness_score"])["group"]
-    
+
     # Generate recommendations
     recommendations = []
     if total_doses_analyzed < 10:
@@ -1547,18 +1562,18 @@ def insulin_glucose_correlation(
             recommendations.append("High insulin sensitivity - be careful with dose increases")
         elif overall_avg_sensitivity and overall_avg_sensitivity > -10:
             recommendations.append("Low insulin sensitivity - may need higher doses or consult healthcare provider")
-        
+
         if correlations:
             best_group = max(correlations, key=lambda x: x["effectiveness_score"])
             recommendations.append(f"Most effective: {best_group} (effectiveness: {best_group['effectiveness_score']:.1%})")
-    
+
     overall_analysis = {
         "total_doses_analyzed": total_doses_analyzed,
         "avg_insulin_sensitivity": round(overall_avg_sensitivity, 2) if overall_avg_sensitivity else None,
         "most_effective_dose_range": most_effective_group,
         "recommendations": recommendations
     }
-    
+
     meta = {
         "start_date": start.isoformat() if start else None,
         "end_date": end.isoformat() if end else None,
@@ -1566,7 +1581,7 @@ def insulin_glucose_correlation(
         "pre_insulin_minutes": pre_insulin_minutes,
         "post_insulin_minutes": post_insulin_minutes
     }
-    
+
     return {
         "correlations": correlations,
         "overall_analysis": overall_analysis,
@@ -1675,11 +1690,11 @@ def recommendations(
     avg_glucose = sum(glucose_values) / len(glucose_values)
     min_glucose = min(glucose_values)
     max_glucose = max(glucose_values)
-    
+
     # Calculate time in target range (70-180 mg/dl)
     in_target = [v for v in glucose_values if 70 <= v <= 180]
     time_in_target = (len(in_target) / len(glucose_values)) * 100
-    
+
     # Calculate coefficient of variation (CV)
     if len(glucose_values) > 1:
         mean = sum(glucose_values) / len(glucose_values)
@@ -1699,7 +1714,7 @@ def recommendations(
                 "message": f"Average glucose is high ({avg_glucose:.0f} mg/dl). Consider adjusting insulin or meal timing.",
                 "action": "Review recent meals and insulin doses"
             })
-        
+
         if max_glucose > 300:
             recommendations["alerts"].append({
                 "type": "warning",
@@ -1707,7 +1722,7 @@ def recommendations(
                 "message": f"Maximum glucose reading is very high ({max_glucose:.0f} mg/dl).",
                 "action": "Check for ketones and contact healthcare provider if needed"
             })
-        
+
         if min_glucose < 70:
             recommendations["alerts"].append({
                 "type": "warning",
@@ -1715,7 +1730,7 @@ def recommendations(
                 "message": f"Minimum glucose reading is low ({min_glucose:.0f} mg/dl).",
                 "action": "Be prepared for hypoglycemia and carry fast-acting carbs"
             })
-        
+
         if min_glucose < 54:
             recommendations["alerts"].append({
                 "type": "warning",
@@ -1723,7 +1738,7 @@ def recommendations(
                 "message": f"Severe hypoglycemia detected ({min_glucose:.0f} mg/dl).",
                 "action": "Treat immediately and review insulin dosing"
             })
-        
+
         if cv > 36:
             recommendations["alerts"].append({
                 "type": "warning",
@@ -1731,7 +1746,7 @@ def recommendations(
                 "message": f"High glucose variability (CV: {cv:.1f}%).",
                 "action": "Focus on consistent meal timing and insulin dosing"
             })
-        
+
         if time_in_target < 70:
             recommendations["alerts"].append({
                 "type": "warning",
@@ -1763,7 +1778,7 @@ def recommendations(
                     "message": f"Average meal carbs are moderate ({avg_carbs:.0f}g). Consider smaller portions for better control.",
                     "priority": "medium"
                 })
-        
+
         # Activity tips
         if activities:
             avg_duration = sum(a.duration_min or 0 for a in activities) / len(activities)
@@ -1773,7 +1788,7 @@ def recommendations(
                     "message": "Consider increasing activity duration for better glucose control.",
                     "priority": "medium"
                 })
-        
+
         # Insulin tips
         if insulin_doses:
             avg_insulin = sum(d.units for d in insulin_doses) / len(insulin_doses)
@@ -1783,7 +1798,7 @@ def recommendations(
                     "message": f"High average insulin dose ({avg_insulin:.1f} units). Consider reviewing with healthcare provider.",
                     "priority": "medium"
                 })
-        
+
         # General management tips
         if len(glucose_readings) < 4:
             recommendations["tips"].append({
@@ -1791,7 +1806,7 @@ def recommendations(
                 "message": "Limited glucose readings. More frequent monitoring provides better insights.",
                 "priority": "medium"
             })
-        
+
         if time_in_target < 80:
             recommendations["tips"].append({
                 "category": "management",
@@ -1803,16 +1818,16 @@ def recommendations(
     if include_trends and len(glucose_readings) > 1:
         # Sort readings by timestamp
         sorted_readings = sorted(glucose_readings, key=lambda x: x.timestamp)
-        
+
         # Analyze recent vs earlier readings
         mid_point = len(sorted_readings) // 2
         earlier_readings = sorted_readings[:mid_point]
         recent_readings = sorted_readings[mid_point:]
-        
+
         if earlier_readings and recent_readings:
             earlier_avg = sum(r.value for r in earlier_readings) / len(earlier_readings)
             recent_avg = sum(r.value for r in recent_readings) / len(recent_readings)
-            
+
             if recent_avg > earlier_avg + 20:
                 recommendations["trends"].append({
                     "type": "increasing",
@@ -1831,7 +1846,7 @@ def recommendations(
                     "message": "Glucose levels are relatively stable. Continue current management approach.",
                     "magnitude": "stable"
                 })
-        
+
         # Pattern analysis
         if cv < 20:
             recommendations["trends"].append({
@@ -1887,14 +1902,14 @@ def _generate_ai_insights(
     Uses statistical analysis and pattern recognition to provide intelligent recommendations.
     """
     insights = []
-    
+
     if not glucose_readings:
         return insights
-    
+
     # Analyze glucose patterns for AI insights
     glucose_values = [r.value for r in glucose_readings]
     glucose_timestamps = [r.timestamp for r in glucose_readings]
-    
+
     # 1. Pattern Recognition: Identify daily glucose patterns
     daily_patterns = _analyze_daily_patterns(glucose_readings)
     if daily_patterns:
@@ -1906,44 +1921,44 @@ def _generate_ai_insights(
             "action": daily_patterns["action"],
             "priority": "medium"
         })
-    
+
     # 2. Meal-Glucose Correlation Analysis
     meal_insights = _analyze_meal_glucose_correlation(glucose_readings, meals)
     if meal_insights:
         insights.extend(meal_insights)
-    
+
     # 3. Activity Impact Analysis
     activity_insights = _analyze_activity_impact(glucose_readings, activities)
     if activity_insights:
         insights.extend(activity_insights)
-    
+
     # 4. Insulin Sensitivity Analysis
     insulin_insights = _analyze_insulin_sensitivity(glucose_readings, insulin_doses)
     if insulin_insights:
         insights.extend(insulin_insights)
-    
+
     # 5. Predictive Insights
     predictive_insights = _generate_predictive_insights(glucose_readings, current_user)
     if predictive_insights:
         insights.extend(predictive_insights)
-    
+
     return insights
 
 def _analyze_daily_patterns(glucose_readings: List[GlucoseReading]) -> Optional[Dict[str, Any]]:
     """Analyze daily glucose patterns to identify recurring trends."""
     if len(glucose_readings) < 7:  # Need at least a week of data
         return None
-    
+
     # Group readings by hour of day
     hourly_patterns = defaultdict(list)
     for reading in glucose_readings:
         hour = reading.timestamp.hour
         hourly_patterns[hour].append(reading.value)
-    
+
     # Find patterns
     high_hours = []
     low_hours = []
-    
+
     for hour, values in hourly_patterns.items():
         if len(values) >= 3:  # Need at least 3 readings for pattern
             avg = sum(values) / len(values)
@@ -1951,7 +1966,7 @@ def _analyze_daily_patterns(glucose_readings: List[GlucoseReading]) -> Optional[
                 high_hours.append(hour)
             elif avg < 100:
                 low_hours.append(hour)
-    
+
     if high_hours and low_hours:
         return {
             "insight": f"Your glucose tends to be high around {', '.join(map(str, sorted(high_hours)))}:00 and low around {', '.join(map(str, sorted(low_hours)))}:00",
@@ -1970,38 +1985,38 @@ def _analyze_daily_patterns(glucose_readings: List[GlucoseReading]) -> Optional[
             "confidence": "medium",
             "action": "Be prepared for potential hypoglycemia during these hours"
         }
-    
+
     return None
 
 def _analyze_meal_glucose_correlation(glucose_readings: List[GlucoseReading], meals: List[Meal]) -> List[Dict[str, Any]]:
     """Analyze correlation between meals and glucose changes."""
     insights = []
-    
+
     if not meals or len(glucose_readings) < 5:
         return insights
-    
+
     # Analyze meal timing and glucose response
     meal_glucose_pairs = []
     for meal in meals:
         # Find glucose readings before and after meal
         pre_meal = None
         post_meal = None
-        
+
         for reading in glucose_readings:
             time_diff = (reading.timestamp - meal.timestamp).total_seconds() / 60
-            
+
             if -30 <= time_diff <= 0 and pre_meal is None:
                 pre_meal = reading.value
             elif 0 <= time_diff <= 120 and post_meal is None:
                 post_meal = reading.value
-        
+
         if pre_meal and post_meal:
             meal_glucose_pairs.append({
                 "meal_carbs": meal.total_carbs or 0,
                 "glucose_change": post_meal - pre_meal,
                 "meal_time": meal.timestamp.hour
             })
-    
+
     if len(meal_glucose_pairs) >= 3:
         # Analyze carb sensitivity
         carb_sensitivity = []
@@ -2009,10 +2024,10 @@ def _analyze_meal_glucose_correlation(glucose_readings: List[GlucoseReading], me
             if pair["meal_carbs"] > 0:
                 sensitivity = pair["glucose_change"] / pair["meal_carbs"]
                 carb_sensitivity.append(sensitivity)
-        
+
         if carb_sensitivity:
             avg_sensitivity = sum(carb_sensitivity) / len(carb_sensitivity)
-            
+
             if avg_sensitivity > 3:
                 insights.append({
                     "type": "meal_analysis",
@@ -2031,31 +2046,31 @@ def _analyze_meal_glucose_correlation(glucose_readings: List[GlucoseReading], me
                     "action": "You may be able to handle more carbs or need less insulin",
                     "priority": "medium"
                 })
-    
+
     return insights
 
 def _analyze_activity_impact(glucose_readings: List[GlucoseReading], activities: List[Activity]) -> List[Dict[str, Any]]:
     """Analyze the impact of activities on glucose levels."""
     insights = []
-    
+
     if not activities or len(glucose_readings) < 5:
         return insights
-    
+
     # Analyze activity types and glucose response
     activity_glucose_pairs = []
     for activity in activities:
         # Find glucose readings before and after activity
         pre_activity = None
         post_activity = None
-        
+
         for reading in glucose_readings:
             time_diff = (reading.timestamp - activity.timestamp).total_seconds() / 60
-            
+
             if -30 <= time_diff <= 0 and pre_activity is None:
                 pre_activity = reading.value
             elif 0 <= time_diff <= 120 and post_activity is None:
                 post_activity = reading.value
-        
+
         if pre_activity and post_activity:
             activity_glucose_pairs.append({
                 "activity_type": activity.type,
@@ -2063,17 +2078,17 @@ def _analyze_activity_impact(glucose_readings: List[GlucoseReading], activities:
                 "duration": activity.duration_min or 0,
                 "glucose_change": post_activity - pre_activity
             })
-    
+
     if len(activity_glucose_pairs) >= 3:
         # Group by activity type
         activity_impacts = defaultdict(list)
         for pair in activity_glucose_pairs:
             activity_impacts[pair["activity_type"]].append(pair["glucose_change"])
-        
+
         for activity_type, changes in activity_impacts.items():
             if len(changes) >= 2:
                 avg_change = sum(changes) / len(changes)
-                
+
                 if avg_change < -20:
                     insights.append({
                         "type": "activity_analysis",
@@ -2092,38 +2107,38 @@ def _analyze_activity_impact(glucose_readings: List[GlucoseReading], activities:
                         "action": "Monitor glucose closely during this activity",
                         "priority": "medium"
                     })
-    
+
     return insights
 
 def _analyze_insulin_sensitivity(glucose_readings: List[GlucoseReading], insulin_doses: List[InsulinDose]) -> List[Dict[str, Any]]:
     """Analyze insulin sensitivity patterns."""
     insights = []
-    
+
     if not insulin_doses or len(glucose_readings) < 5:
         return insights
-    
+
     # Analyze insulin effectiveness
     insulin_glucose_pairs = []
     for dose in insulin_doses:
         # Find glucose readings before and after insulin
         pre_insulin = None
         post_insulin = None
-        
+
         for reading in glucose_readings:
             time_diff = (reading.timestamp - dose.timestamp).total_seconds() / 60
-            
+
             if -30 <= time_diff <= 0 and pre_insulin is None:
                 pre_insulin = reading.value
             elif 0 <= time_diff <= 180 and post_insulin is None:
                 post_insulin = reading.value
-        
+
         if pre_insulin and post_insulin:
             insulin_glucose_pairs.append({
                 "insulin_units": dose.units,
                 "glucose_change": post_insulin - pre_insulin,
                 "insulin_time": dose.timestamp.hour
             })
-    
+
     if len(insulin_glucose_pairs) >= 3:
         # Calculate insulin sensitivity
         sensitivities = []
@@ -2131,10 +2146,10 @@ def _analyze_insulin_sensitivity(glucose_readings: List[GlucoseReading], insulin
             if pair["insulin_units"] > 0:
                 sensitivity = pair["glucose_change"] / pair["insulin_units"]
                 sensitivities.append(sensitivity)
-        
+
         if sensitivities:
             avg_sensitivity = sum(sensitivities) / len(sensitivities)
-            
+
             if avg_sensitivity > -10:
                 insights.append({
                     "type": "insulin_analysis",
@@ -2153,27 +2168,27 @@ def _analyze_insulin_sensitivity(glucose_readings: List[GlucoseReading], insulin
                     "action": "Be cautious with insulin dosing to avoid hypoglycemia",
                     "priority": "high"
                 })
-    
+
     return insights
 
 def _generate_predictive_insights(glucose_readings: List[GlucoseReading], current_user: User) -> List[Dict[str, Any]]:
     """Generate predictive insights based on historical patterns."""
     insights = []
-    
+
     if len(glucose_readings) < 10:  # Need significant historical data
         return insights
-    
+
     # Analyze recent trends
     sorted_readings = sorted(glucose_readings, key=lambda x: x.timestamp)
     recent_readings = sorted_readings[-7:]  # Last 7 readings
     earlier_readings = sorted_readings[-14:-7]  # 7 readings before that
-    
+
     if len(recent_readings) >= 3 and len(earlier_readings) >= 3:
         recent_avg = sum(r.value for r in recent_readings) / len(recent_readings)
         earlier_avg = sum(r.value for r in earlier_readings) / len(earlier_readings)
-        
+
         trend = recent_avg - earlier_avg
-        
+
         if trend > 30:
             insights.append({
                 "type": "predictive",
@@ -2192,13 +2207,13 @@ def _generate_predictive_insights(glucose_readings: List[GlucoseReading], curren
                 "action": "Monitor for hypoglycemia and consider adjusting insulin doses",
                 "priority": "medium"
             })
-    
+
     # Predict potential issues based on patterns
     glucose_values = [r.value for r in glucose_readings]
     if len(glucose_values) >= 5:
         recent_high_count = sum(1 for v in glucose_values[-5:] if v > 200)
         recent_low_count = sum(1 for v in glucose_values[-5:] if v < 70)
-        
+
         if recent_high_count >= 3:
             insights.append({
                 "type": "predictive",
@@ -2217,5 +2232,5 @@ def _generate_predictive_insights(glucose_readings: List[GlucoseReading], curren
                 "action": "Be prepared for hypoglycemia and consider reducing insulin doses",
                 "priority": "high"
             })
-    
+
     return insights

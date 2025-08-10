@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.glucose_reading import GlucoseReading
@@ -38,42 +38,50 @@ def create_glucose_reading(reading_in: GlucoseReadingCreate, session: Session = 
 # List all glucose readings for the current user (or all if admin)
 @router.get("/", response_model=List[GlucoseReadingReadBasic])
 def list_glucose_readings(
-    start_date: str = None,
-    end_date: str = None,
-    meal_context: str = None,
-    unit: str = None,
-    search: str = None,
-    session: Session = Depends(get_session), 
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    start_datetime: datetime | None = Query(None, description="Start datetime (ISO 8601, UTC preferred)"),
+    end_datetime: datetime | None = Query(None, description="End datetime (ISO 8601, UTC preferred)"),
+    meal_context: str | None = Query(None),
+    unit: str | None = Query(None),
+    search: str | None = Query(None),
+    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
     # Build the base query
     query = select(GlucoseReading)
-    
+
     # Filter by user (unless admin)
     if not current_user.is_admin:
         query = query.where(GlucoseReading.user_id == current_user.id)
-    
+
     # Apply filters
-    if start_date:
+    if start_datetime:
+        sdt = start_datetime if start_datetime.tzinfo else start_datetime.replace(tzinfo=UTC)
+        query = query.where(GlucoseReading.timestamp >= sdt)
+    if end_datetime:
+        edt = end_datetime if end_datetime.tzinfo else end_datetime.replace(tzinfo=UTC)
+        query = query.where(GlucoseReading.timestamp <= edt)
+    if start_date and not start_datetime:
         try:
             start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
             query = query.where(GlucoseReading.timestamp >= start_dt)
         except ValueError:
             pass  # Ignore invalid date format
-    
-    if end_date:
+
+    if end_date and not end_datetime:
         try:
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             query = query.where(GlucoseReading.timestamp <= end_dt)
         except ValueError:
             pass  # Ignore invalid date format
-    
+
     if meal_context:
         query = query.where(GlucoseReading.meal_context == meal_context)
-    
+
     if unit:
         query = query.where(GlucoseReading.unit == unit)
-    
+
     if search:
         search_term = f"%{search}%"
         query = query.where(
@@ -82,7 +90,7 @@ def list_glucose_readings(
             (GlucoseReading.meal_context.contains(search_term)) |
             (GlucoseReading.note.contains(search_term))
         )
-    
+
     # Execute query and return results
     readings = session.exec(query).all()
     return [GlucoseReadingReadBasic.model_validate(r) for r in readings]
@@ -129,4 +137,4 @@ def delete_glucose_reading(reading_id: int, session: Session = Depends(get_sessi
     # Delete the reading from the database
     session.delete(reading)
     session.commit()
-    return None 
+    return None

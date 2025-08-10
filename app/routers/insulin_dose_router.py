@@ -25,7 +25,9 @@ def create_insulin_dose(dose_in: InsulinDoseCreate, session: Session = Depends(g
         user_id=int(current_user.id),
         units=dose_in.units,
         timestamp=dose_in.timestamp or datetime.now(UTC),
-        note=dose_in.note
+        note=dose_in.note,
+        meal_context=getattr(dose_in, 'meal_context', None),
+        type=getattr(dose_in, 'type', None)
     )
     # Add and save the new dose to the database
     session.add(dose)
@@ -86,4 +88,4 @@ def delete_insulin_dose(dose_id: int, session: Session = Depends(get_session), c
     # Delete the dose from the database
     session.delete(dose)
     session.commit()
-    return None 
+    return None

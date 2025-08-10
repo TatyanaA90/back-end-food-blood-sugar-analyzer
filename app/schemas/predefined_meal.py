@@ -37,6 +37,10 @@ class PredefinedMealUpdate(PredefinedMealBase):
 
 class PredefinedMealRead(PredefinedMealBase):
     id: int
+    # personal templates have owner_user_id; admin templates have None
+    # we expose for admin tooling if needed in UI, safe to keep optional
+    # owner_user_id omitted in create/update inputs
+    # owner_user_id: Optional[int] = None  # keep internal if desired
     ingredients: List[PredefinedMealIngredientRead]
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,4 +63,6 @@ class PredefinedMealWithNutrition(BaseModel):
     total_carbs_per_portion: float
     total_weight_per_portion: float
     average_glycemic_index: Optional[float] = None
+    created_by_admin: bool
+    owner_user_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)

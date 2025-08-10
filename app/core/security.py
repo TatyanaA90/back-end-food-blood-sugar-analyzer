@@ -17,7 +17,7 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
-oauth2_scheme = HTTPBearer()
+oauth2_scheme = HTTPBearer(auto_error=False)
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain text password against a hashed password using bcrypt."""
@@ -51,6 +51,12 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(oauth2_scheme), session: Session = Depends(get_session)) -> User:
     """Get authenticated user from JWT token."""
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = credentials.credentials
     payload = decode_access_token(token)
     if payload is None:

@@ -13,6 +13,8 @@ from app.models.predefined_meal import PredefinedMeal
 from app.models.predefined_meal_ingredient import PredefinedMealIngredient
 from app.core.security import get_current_user
 from typing import List
+from fastapi import HTTPException
+from datetime import datetime, UTC
 
 router = APIRouter(prefix="/meals", tags=["meals"])
 
@@ -21,7 +23,9 @@ def can_edit_meal(meal: Meal, user: User) -> bool:
     return meal.user_id == user.id or user.is_admin
 
 # Helper: calculate totals
-def calculate_meal_totals(ingredients: List[MealIngredientCreate]):
+def calculate_meal_totals(ingredients: List[MealIngredientCreate] | None):
+    if not ingredients:
+        return 0, 0
     total_carbs = sum(i.carbs for i in ingredients)
     total_weight = sum(i.weight or 0 for i in ingredients)
     return total_carbs, total_weight
@@ -38,7 +42,7 @@ def create_meal(meal_in: MealCreate, session: Session = Depends(get_session), cu
         glycemic_index=meal_in.glycemic_index,
         note=meal_in.note,
         photo_url=meal_in.photo_url,
-        timestamp=meal_in.timestamp,
+        timestamp=meal_in.timestamp or datetime.now(UTC),
         user_id=current_user.id
     )
     session.add(meal)
@@ -47,68 +51,102 @@ def create_meal(meal_in: MealCreate, session: Session = Depends(get_session), cu
     if meal.id is None:
         raise HTTPException(status_code=500, detail="Meal ID not set after creation.")
     # Add ingredients
-    for ing in meal_in.ingredients:
-        ingredient = MealIngredient(
-            meal_id=int(meal.id),
-            name=ing.name,
-            weight=ing.weight,
-            carbs=ing.carbs,
-            glycemic_index=ing.glycemic_index,
-            note=ing.note
-        )
-        session.add(ingredient)
+    if meal_in.ingredients:
+        for ing in meal_in.ingredients:
+            ingredient = MealIngredient(
+                meal_id=int(meal.id),
+                name=ing.name,
+                weight=ing.weight,
+                carbs=ing.carbs,
+                glycemic_index=ing.glycemic_index,
+                note=ing.note
+            )
+            session.add(ingredient)
     session.commit()
     session.refresh(meal)
     # Reload with ingredients
     meal = session.exec(select(Meal).where(Meal.id == meal.id)).first()
     return MealReadDetail.model_validate(meal)
 
+@router.post("/{meal_id}/ingredients")
+def add_meal_ingredient(
+    meal_id: int,
+    ingredient: dict,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    meal = session.get(Meal, meal_id)
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    if meal.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    name = ingredient.get("name")
+    carbs_per_100g = ingredient.get("carbs_per_100g")
+    weight_grams = ingredient.get("weight_grams")
+    if not name or carbs_per_100g is None or weight_grams is None:
+        raise HTTPException(status_code=422, detail="Missing required ingredient fields")
+
+    carbs = float(carbs_per_100g) * float(weight_grams) / 100.0
+    mi = MealIngredient(
+        meal_id=meal.id,
+        name=name,
+        weight=float(weight_grams),
+        carbs=float(carbs),
+        glycemic_index=None,
+        note=None,
+    )
+    session.add(mi)
+    session.commit()
+    session.refresh(meal)
+    return {"message": "Ingredient added"}
+
 @router.post("/from-predefined", response_model=MealReadDetail, status_code=status.HTTP_201_CREATED)
 def create_meal_from_predefined(
-    meal_data: MealFromPredefinedCreate, 
-    session: Session = Depends(get_session), 
+    meal_data: MealFromPredefinedCreate,
+    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
     """Create a meal from a predefined template with quantity and weight adjustments"""
-    
+
     # Validate quantity
     if meal_data.quantity < 1 or meal_data.quantity > 10:
         raise HTTPException(status_code=400, detail="Quantity must be between 1 and 10")
-    
+
     # Get the predefined meal
     predefined_meal = session.get(PredefinedMeal, meal_data.predefined_meal_id)
     if not predefined_meal or not predefined_meal.is_active:
         raise HTTPException(status_code=404, detail="Predefined meal not found")
-    
+
     # Calculate base nutrition per portion
     total_carbs_per_portion = 0
     total_weight_per_portion = 0
-    
+
     # Create ingredient adjustments map
     ingredient_adjustments = {}
     if meal_data.ingredient_adjustments:
         for adjustment in meal_data.ingredient_adjustments:
             ingredient_adjustments[adjustment['ingredient_id']] = adjustment['adjusted_weight']
-    
+
     # Create meal ingredients from predefined template
     meal_ingredients = []
     for predefined_ingredient in predefined_meal.ingredients:
         # Calculate base weight for this portion
         base_weight = predefined_ingredient.base_weight * meal_data.quantity
-        
+
         # Apply user adjustment if provided
         adjusted_weight = ingredient_adjustments.get(predefined_ingredient.id, base_weight)
-        
+
         # Validate adjusted weight
         if adjusted_weight < 0:
             raise HTTPException(status_code=400, detail=f"Weight for {predefined_ingredient.name} must be >= 0")
-        
+
         # Calculate carbs based on final weight
         carbs = (adjusted_weight / 100) * predefined_ingredient.carbs_per_100g
-        
+
         total_carbs_per_portion += carbs
         total_weight_per_portion += adjusted_weight
-        
+
         meal_ingredients.append({
             'name': predefined_ingredient.name,
             'weight': adjusted_weight,
@@ -116,7 +154,7 @@ def create_meal_from_predefined(
             'glycemic_index': predefined_ingredient.glycemic_index,
             'note': predefined_ingredient.note
         })
-    
+
     # Create the meal
     assert current_user.id is not None, "User ID must not be None"
     meal = Meal(
@@ -135,11 +173,11 @@ def create_meal_from_predefined(
     session.add(meal)
     session.commit()
     session.refresh(meal)
-    
+
     # Add ingredients
     if meal.id is None:
         raise HTTPException(status_code=500, detail="Meal ID not set after creation.")
-    
+
     for ingredient_data in meal_ingredients:
         ingredient = MealIngredient(
             meal_id=int(meal.id),
@@ -150,10 +188,10 @@ def create_meal_from_predefined(
             note=ingredient_data['note']
         )
         session.add(ingredient)
-    
+
     session.commit()
     session.refresh(meal)
-    
+
     # Reload with ingredients
     meal = session.exec(select(Meal).where(Meal.id == meal.id)).first()
     return MealReadDetail.model_validate(meal)

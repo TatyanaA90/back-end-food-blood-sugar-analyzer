@@ -11,11 +11,11 @@ class Activity(Base, table=True):
     duration_min: Optional[int] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    timestamp: Optional[datetime] = None  
+    timestamp: Optional[datetime] = None
     note: Optional[str] = None
     calories_burned: Optional[float] = None
 
     user: "User" = Relationship(back_populates="activities")
 
 if TYPE_CHECKING:
-    from .user import User 
+    from .user import User

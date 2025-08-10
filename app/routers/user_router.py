@@ -73,14 +73,14 @@ def send_reset_email(email: str, reset_token: str):
         reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
         body = f"""
         You have requested to reset your password.
-        
+
         Click the link below to reset your password:
         {reset_url}
-        
+
         If you did not request this, please ignore this email.
         The link will expire in 1 hour.
         """
-        
+
         msg.attach(MIMEText(body, 'plain'))
 
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
@@ -89,7 +89,7 @@ def send_reset_email(email: str, reset_token: str):
             if settings.SMTP_USER and settings.SMTP_PASSWORD:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
-            
+
         return True
     except Exception as e:
         print(f"Error sending email: {e}")
@@ -102,15 +102,15 @@ def forgot_password(request: PasswordResetRequest, session: Session = Depends(ge
     if not user:
         # Don't reveal if email exists
         return {"message": "If an account exists with this email, a reset link will be sent."}
-    
+
     # Generate reset token
     reset_token = secrets.token_urlsafe(32)
     user.reset_token = reset_token
     user.reset_token_expires = datetime.now(UTC) + timedelta(hours=1)
-    
+
     session.add(user)
     session.commit()
-    
+
     # Send reset email
     if send_reset_email(request.email, reset_token):
         return {"message": "If an account exists with this email, a reset link will be sent."}
@@ -122,22 +122,22 @@ def forgot_password(request: PasswordResetRequest, session: Session = Depends(ge
 def reset_password(reset_data: PasswordReset, session: Session = Depends(get_session)):
     """Reset password using reset token."""
     user = session.exec(select(User).where(User.reset_token == reset_data.token)).first()
-    
+
     current_time = datetime.now(UTC)
     # Ensure reset_token_expires is timezone-aware
     if user.reset_token_expires and user.reset_token_expires.tzinfo is None:
         user.reset_token_expires = user.reset_token_expires.replace(tzinfo=UTC)
     if not user or not user.reset_token_expires or user.reset_token_expires < current_time:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-    
+
     # Update password
     user.hashed_password = get_password_hash(reset_data.new_password)
     user.reset_token = None
     user.reset_token_expires = None
-    
+
     session.add(user)
     session.commit()
-    
+
     return {"message": "Password reset successfully"}
 
 @router.post("/me/change-password")
@@ -150,12 +150,12 @@ def change_password(
     # Verify current password
     if not verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Current password is incorrect")
-    
+
     # Hash and update new password
     current_user.hashed_password = get_password_hash(password_data.new_password)
     session.add(current_user)
     session.commit()
-    
+
     return {"message": "Password changed successfully"}
 
 @router.post("/users", response_model=UserRegistrationResponse)
@@ -173,14 +173,14 @@ def create_user(user: UserCreate, session: Session = Depends(get_session)):
         session.add(db_user)
         session.commit()
         session.refresh(db_user)
-        
+
         # Create access token for immediate login after registration
         access_token = create_access_token(
             data={"sub": db_user.username},
             expires_delta=timedelta(minutes=30),
             is_admin=db_user.is_admin
         )
-        
+
         return UserRegistrationResponse(
             access_token=access_token,
             token_type="bearer",
@@ -260,11 +260,11 @@ def update_me(
     """Update current user's profile."""
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(current_user, field, value)
-    
+
     session.add(current_user)
     session.commit()
     session.refresh(current_user)
-    
+
     return current_user
 
 
@@ -282,12 +282,12 @@ def delete_user(
     # Check if current user is admin or deleting their own account
     if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="You can only delete your own account, or be an admin")
-    
+
     # Find the user
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Prevent admin from deleting themselves (safety measure)
     if current_user.id == user_id and current_user.is_admin:
         # Check if there are other admins
@@ -296,28 +296,28 @@ def delete_user(
         ).all()
         if not other_admins:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Cannot delete the last admin account. Create another admin first."
             )
-    
+
     try:
         # Delete related data first (foreign key constraints)
         session.exec(delete(ConditionLog).where(ConditionLog.user_id == user_id))
         session.exec(delete(Activity).where(Activity.user_id == user_id))
         session.exec(delete(InsulinDose).where(InsulinDose.user_id == user_id))
-        
+
         # Delete meal ingredients for user's meals
         user_meals = session.exec(select(Meal.id).where(Meal.user_id == user_id)).all()
         for meal_id in user_meals:
             session.exec(delete(MealIngredient).where(MealIngredient.meal_id == meal_id))
-        
+
         session.exec(delete(Meal).where(Meal.user_id == user_id))
         session.exec(delete(GlucoseReading).where(GlucoseReading.user_id == user_id))
-        
+
         # Finally delete the user
         session.delete(user)
         session.commit()
-        
+
         return {
             "message": f"Successfully deleted user '{user.username}' and all related data",
             "deleted_user": user.username

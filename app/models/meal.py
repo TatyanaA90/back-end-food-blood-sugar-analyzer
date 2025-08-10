@@ -14,7 +14,7 @@ class Meal(Base, table=True):
     glycemic_index: Optional[float] = None
     note: Optional[str] = None
     photo_url: Optional[str] = None
-    
+
     # Predefined meal support
     is_predefined: bool = Field(default=False)
     predefined_meal_id: Optional[int] = Field(default=None, foreign_key="predefined_meals.id")
@@ -29,4 +29,4 @@ if TYPE_CHECKING:
     from .user import User
     from .meal_ingredient import MealIngredient
     from .insulin_dose import InsulinDose
-    from .predefined_meal import PredefinedMeal 
+    from .predefined_meal import PredefinedMeal
