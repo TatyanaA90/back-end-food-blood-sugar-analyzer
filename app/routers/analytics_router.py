@@ -795,10 +795,12 @@ def meal_impact(
     end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)"),
     start_datetime: Optional[datetime] = Query(None, description="Start datetime (ISO 8601, UTC preferred)"),
     end_datetime: Optional[datetime] = Query(None, description="End datetime (ISO 8601, UTC preferred)"),
-    group_by: str = Query("time_of_day", description="Group by 'meal_type' or 'time_of_day'"),
+    group_by: str = Query("time_of_day", description="Group by 'meal_type', 'time_of_day', or 'carb_range'"),
     pre_meal_minutes: int = Query(30, description="Minutes before meal to look for glucose reading"),
     post_meal_minutes: int = Query(120, description="Minutes after meal to look for glucose reading"),
-    unit: str = Query("mg/dL", description="Preferred unit for glucose values: 'mg/dL' or 'mmol/L'"),
+    window_minutes: Optional[int] = Query(None, description="Analysis window length after meal (default 180). Overrides post_meal_minutes if set."),
+    unit: str = Query("mg/dL", description="Preferred unit: 'mg/dL' or 'mmol/L' (also accepts 'mgdl'|'mmol')"),
+    min_readings: int = Query(0, description="Minimum number of post-meal readings required to include a meal in analysis"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -834,8 +836,12 @@ def meal_impact(
         end = end_date
 
     # Validate group_by parameter
-    if group_by not in ["meal_type", "time_of_day"]:
-        raise HTTPException(status_code=400, detail="group_by must be 'meal_type' or 'time_of_day'")
+    if group_by not in ["meal_type", "time_of_day", "carb_range"]:
+        raise HTTPException(status_code=400, detail="group_by must be 'meal_type', 'time_of_day', or 'carb_range'")
+
+    # Normalize requested unit (tolerate mgdl/mmol)
+    canonical_unit, requested_unit = normalize_unit(unit)
+    unit = canonical_unit  # use canonical like mg/dL or mmol/L
 
     # Query meals for the user in the date/time range
     meal_query = select(Meal).where(Meal.user_id == current_user.id)
@@ -930,26 +936,70 @@ def meal_impact(
                 if pre_meal_reading is None or reading._timezone_aware_timestamp > pre_meal_reading._timezone_aware_timestamp:
                     pre_meal_reading = reading
 
-        # Find post-meal glucose reading (closest reading within post_meal_minutes after meal)
-        post_meal_reading = None
+        # Collect post-meal series within analysis window
+        analysis_window = window_minutes or post_meal_minutes or 180
+        post_window_readings: list[GlucoseReading] = []
         for reading in valid_readings:
-            if reading._timezone_aware_timestamp >= meal_time and (reading._timezone_aware_timestamp - meal_time).total_seconds() / 60 <= post_meal_minutes:
-                if post_meal_reading is None or reading._timezone_aware_timestamp < post_meal_reading._timezone_aware_timestamp:
-                    post_meal_reading = reading
+            if meal_time <= reading._timezone_aware_timestamp <= (meal_time + timedelta(minutes=analysis_window)):
+                post_window_readings.append(reading)
 
-        # Only analyze if we have both pre and post readings
-        if pre_meal_reading and post_meal_reading:
-            # Convert glucose values to the requested unit if needed
+        # Fallbacks to increase data availability:
+        # 1) If no pre-meal reading found in the strict window, broaden the lookback to up to 120 minutes
+        if pre_meal_reading is None:
+            fallback_lookback_minutes = max(pre_meal_minutes, 120)
+            for reading in valid_readings:
+                if reading._timezone_aware_timestamp <= meal_time and (meal_time - reading._timezone_aware_timestamp).total_seconds() / 60 <= fallback_lookback_minutes:
+                    if pre_meal_reading is None or reading._timezone_aware_timestamp > pre_meal_reading._timezone_aware_timestamp:
+                        pre_meal_reading = reading
+
+        # 2) If still no baseline and we do have some post-window readings, use the first post reading as a baseline
+        if pre_meal_reading is None and post_window_readings:
+            # Note: Using first post-meal point as baseline ensures we can still compute a delta series
+            pre_meal_reading = post_window_readings[0]
+
+        # Only analyze if we have a baseline (pre or fallback) and at least min_readings post points (or at least one)
+        if pre_meal_reading and (len(post_window_readings) >= max(1, min_readings)):
+            # Normalize pre-meal value to requested unit based on the reading's stored unit
             pre_glucose_value = pre_meal_reading.value
-            post_glucose_value = post_meal_reading.value
-            
-            # Apply unit conversion if the requested unit is different from mg/dL (default)
-            if unit != "mg/dL":
-                # Convert from mg/dL to the requested unit
-                pre_glucose_value = convert_glucose_value(pre_glucose_value, "mg/dL", unit)
-                post_glucose_value = convert_glucose_value(post_glucose_value, "mg/dL", unit)
-            
-            glucose_change = post_glucose_value - pre_glucose_value
+            try:
+                from_unit = getattr(pre_meal_reading, "unit", None) or "mg/dL"
+                pre_glucose_value = convert_glucose_value(pre_glucose_value, from_unit, unit)
+            except Exception:
+                # Fallback to legacy behavior (assume stored as mg/dL)
+                if unit != "mg/dL":
+                    pre_glucose_value = convert_glucose_value(pre_glucose_value, "mg/dL", unit)
+
+            # Build delta series at native sampling timestamps (minute offsets)
+            delta_series: list[tuple[int, float]] = []
+            peak_delta = None
+            time_to_peak = None
+            return_to_baseline = None
+            baseline = pre_glucose_value
+            for r2 in post_window_readings:
+                # Normalize each post-meal value to the requested unit based on the reading's stored unit
+                val = r2.value
+                try:
+                    from_unit = getattr(r2, "unit", None) or "mg/dL"
+                    val = convert_glucose_value(val, from_unit, unit)
+                except Exception:
+                    if unit != "mg/dL":
+                        val = convert_glucose_value(val, "mg/dL", unit)
+                minutes = int((r2._timezone_aware_timestamp - meal_time).total_seconds() // 60)
+                delta = val - baseline
+                delta_series.append((minutes, round(delta, 2)))
+                if peak_delta is None or delta > peak_delta:
+                    peak_delta = delta
+                    time_to_peak = minutes
+                # Return to baseline when within ±5 mg/dL or ±0.3 mmol/L depending on unit
+                tolerance = 5 if unit == "mg/dL" else 0.3
+                if return_to_baseline is None and abs(delta) <= tolerance and minutes > 0:
+                    return_to_baseline = minutes
+
+            # Fallback if not returned to baseline within window
+            if return_to_baseline is None:
+                return_to_baseline = analysis_window
+
+            # Determine group based on group_by parameter
 
             # Determine group based on group_by parameter
             if group_by == "meal_type":
@@ -986,7 +1036,7 @@ def meal_impact(
                         group = "dinner"
                     else:
                         group = "snack"
-            else:  # time_of_day
+            elif group_by == "time_of_day":
                 hour = meal_time.hour
                 if 5 <= hour < 11:
                     group = "breakfast"
@@ -996,15 +1046,26 @@ def meal_impact(
                     group = "dinner"
                 else:
                     group = "snack"
+            else:  # carb_range
+                carbs = meal.total_carbs or 0
+                if carbs < 30:
+                    group = "0-30g"
+                elif carbs < 60:
+                    group = "30-60g"
+                    
+                else:
+                    group = "60g+"
 
             meal_impacts.append({
                 "group": group,
-                "glucose_change": glucose_change,
-                "pre_meal_glucose": pre_glucose_value,
-                "post_meal_glucose": post_glucose_value,
+                "glucose_change": round((delta_series[-1][1] if delta_series else 0), 2),
+                "pre_meal_glucose": round(pre_glucose_value, 2),
+                "peak_delta": round(peak_delta or 0.0, 2),
+                "time_to_peak_min": time_to_peak or 0,
+                "return_to_baseline_min": return_to_baseline or analysis_window,
+                "delta_series": delta_series,
                 "meal_timestamp": meal_time.isoformat(),
                 "pre_meal_timestamp": pre_meal_reading._timezone_aware_timestamp.isoformat(),
-                "post_meal_timestamp": post_meal_reading._timezone_aware_timestamp.isoformat()
             })
             total_meals_analyzed += 1
 
@@ -1021,11 +1082,15 @@ def meal_impact(
     for group, impacts in grouped_impacts.items():
         glucose_changes = [impact["glucose_change"] for impact in impacts]
         pre_meal_values = [impact["pre_meal_glucose"] for impact in impacts]
-        post_meal_values = [impact["post_meal_glucose"] for impact in impacts]
+        peak_deltas = [impact.get("peak_delta", 0.0) for impact in impacts]
+        ttp = [impact.get("time_to_peak_min", 0) for impact in impacts if impact.get("time_to_peak_min") is not None]
+        rtb = [impact.get("return_to_baseline_min", 0) for impact in impacts if impact.get("return_to_baseline_min") is not None]
 
         avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
         avg_pre_meal = sum(pre_meal_values) / len(pre_meal_values)
-        avg_post_meal = sum(post_meal_values) / len(post_meal_values)
+        avg_peak = sum(peak_deltas) / len(peak_deltas) if peak_deltas else 0.0
+        median_ttp = int(sorted(ttp)[len(ttp)//2]) if ttp else 0
+        avg_rtb = int(sum(rtb) / len(rtb)) if rtb else 0
 
         # Calculate standard deviation
         if len(glucose_changes) > 1:
@@ -1040,12 +1105,26 @@ def meal_impact(
             "avg_glucose_change": round(avg_glucose_change, 2),
             "num_meals": len(impacts),
             "avg_pre_meal": round(avg_pre_meal, 2),
-            "avg_post_meal": round(avg_post_meal, 2),
+            "avg_peak_delta": round(avg_peak, 2),
+            "median_time_to_peak_min": median_ttp,
+            "avg_return_to_baseline_min": avg_rtb,
             "std_dev_change": round(std_dev_change, 2)
         })
 
     # Sort by group name for consistent output
     result_impacts.sort(key=lambda x: x["group"])
+
+    # Overall aggregation
+    all_peaks = [i.get("peak_delta", 0.0) for i in meal_impacts]
+    all_ttp = [i.get("time_to_peak_min", 0) for i in meal_impacts if i.get("time_to_peak_min") is not None]
+    all_rtb = [i.get("return_to_baseline_min", 0) for i in meal_impacts if i.get("return_to_baseline_min") is not None]
+
+    overall = {
+        "meals_analyzed": total_meals_analyzed,
+        "avg_peak_delta": round(sum(all_peaks) / len(all_peaks), 2) if all_peaks else 0.0,
+        "median_time_to_peak_min": int(sorted(all_ttp)[len(all_ttp)//2]) if all_ttp else 0,
+        "avg_return_to_baseline_min": int(sum(all_rtb) / len(all_rtb)) if all_rtb else 0,
+    }
 
     meta = {
         "start_date": start.isoformat() if start else None,
@@ -1053,14 +1132,45 @@ def meal_impact(
         "group_by": group_by,
         "pre_meal_minutes": pre_meal_minutes,
         "post_meal_minutes": post_meal_minutes,
+        "window_minutes": window_minutes or post_meal_minutes,
         "total_meals_analyzed": total_meals_analyzed,
         "requested_unit": unit
     }
 
-    return {
-        "meal_impacts": result_impacts,
-        "meta": meta
+    # Construct richer response while keeping backward-compatible field
+    response = {
+        "meta": meta,
+        "overall": overall,
+        "groups": [
+            {
+                "key": r["group"],
+                "n": r["num_meals"],
+                "avg_delta": r["avg_glucose_change"],
+                "peak_delta": r.get("avg_peak_delta", 0.0),
+                "time_to_peak_min": r.get("median_time_to_peak_min", 0),
+                "return_to_baseline_min": r.get("avg_return_to_baseline_min", 0),
+                "effectiveness_score": round(max(0.0, 1.0 - max(0.0, r.get("avg_peak_delta", 0.0)) / (50 if unit == "mg/dL" else 2.8)), 2),
+            }
+            for r in result_impacts
+        ],
+        "timeline": [
+            {
+                "meal_id": None,
+                "ts": i["meal_timestamp"],
+                "delta_series": i.get("delta_series", [])
+            }
+            for i in meal_impacts
+        ],
+        "recommendations": (
+            [
+                "Consider lower-carb options or pre-bolus by 10–15 min to reduce peaks."
+            ] if overall["avg_peak_delta"] > (30 if unit == "mg/dL" else 1.7) else []
+        ),
+        # legacy field used by existing frontend
+        "meal_impacts": result_impacts
     }
+
+    return response
 
 
 @router.get("/activity-impact")

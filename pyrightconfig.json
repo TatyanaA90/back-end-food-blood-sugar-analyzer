@@ -15,17 +15,18 @@
     "extraPaths": [
         "./app"
     ],
-    "venvPath": ".",
+    "venvPath": "/Users/ta/repos/capstone_food_blood_suger_analyzer_final/back-end-food-blood-sugar-analyzer",
     "venv": "venv",
     "pythonVersion": "3.13",
     "pythonPlatform": "Darwin",
-    "pythonPath": "./venv/bin/python",
+    "pythonPath": "/Users/ta/repos/capstone_food_blood_suger_analyzer_final/back-end-food-blood-sugar-analyzer/venv/bin/python",
     "executionEnvironments": [
         {
             "root": ".",
             "pythonVersion": "3.13",
             "pythonPlatform": "Darwin",
             "extraPaths": ["./app"],
+            "venvPath": "/Users/ta/repos/capstone_food_blood_suger_analyzer_final/back-end-food-blood-sugar-analyzer",
             "venv": "venv"
         }
     ]
