@@ -1,0 +1,32 @@
+{
+    "include": [
+        "app"
+    ],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "venv"
+    ],
+    "ignore": [],
+    "defineConstant": {},
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "autoImportCompletions": true,
+    "extraPaths": [
+        "./app"
+    ],
+    "venvPath": ".",
+    "venv": "venv",
+    "pythonVersion": "3.13",
+    "pythonPlatform": "Darwin",
+    "pythonPath": "./venv/bin/python",
+    "executionEnvironments": [
+        {
+            "root": ".",
+            "pythonVersion": "3.13",
+            "pythonPlatform": "Darwin",
+            "extraPaths": ["./app"],
+            "venv": "venv"
+        }
+    ]
+}
