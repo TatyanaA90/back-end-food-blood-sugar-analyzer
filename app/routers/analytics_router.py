@@ -12,6 +12,32 @@ from datetime import datetime, date, timedelta, UTC
 import statistics
 from collections import defaultdict
 import math
+from app.utils.units import normalize_unit
+
+def convert_glucose_value(value: float, from_unit: str, to_unit: str) -> float:
+    """
+    Convert glucose values between mg/dL and mmol/L.
+    mg/dL to mmol/L: divide by 18
+    mmol/L to mg/dL: multiply by 18
+    """
+    # Normalize units to canonical forms
+    unit_map = {
+        "mg/dl": "mg/dL",
+        "mg/dL": "mg/dL",
+        "MMG/DL": "mg/dL",
+        "mmol/l": "mmol/L",
+        "mmol/L": "mmol/L",
+    }
+    fu = unit_map.get(str(from_unit), str(from_unit))
+    tu = unit_map.get(str(to_unit), str(to_unit))
+
+    if fu == tu:
+        return value
+    if fu == "mg/dL" and tu == "mmol/L":
+        return round(value / 18, 1)
+    if fu == "mmol/L" and tu == "mg/dL":
+        return round(value * 18, 0)
+    raise ValueError(f"Unsupported unit conversion: {from_unit} to {to_unit}")
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -772,6 +798,7 @@ def meal_impact(
     group_by: str = Query("time_of_day", description="Group by 'meal_type' or 'time_of_day'"),
     pre_meal_minutes: int = Query(30, description="Minutes before meal to look for glucose reading"),
     post_meal_minutes: int = Query(120, description="Minutes after meal to look for glucose reading"),
+    unit: str = Query("mg/dL", description="Preferred unit for glucose values: 'mg/dL' or 'mmol/L'"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -912,7 +939,17 @@ def meal_impact(
 
         # Only analyze if we have both pre and post readings
         if pre_meal_reading and post_meal_reading:
-            glucose_change = post_meal_reading.value - pre_meal_reading.value
+            # Convert glucose values to the requested unit if needed
+            pre_glucose_value = pre_meal_reading.value
+            post_glucose_value = post_meal_reading.value
+            
+            # Apply unit conversion if the requested unit is different from mg/dL (default)
+            if unit != "mg/dL":
+                # Convert from mg/dL to the requested unit
+                pre_glucose_value = convert_glucose_value(pre_glucose_value, "mg/dL", unit)
+                post_glucose_value = convert_glucose_value(post_glucose_value, "mg/dL", unit)
+            
+            glucose_change = post_glucose_value - pre_glucose_value
 
             # Determine group based on group_by parameter
             if group_by == "meal_type":
@@ -963,8 +1000,8 @@ def meal_impact(
             meal_impacts.append({
                 "group": group,
                 "glucose_change": glucose_change,
-                "pre_meal_glucose": pre_meal_reading.value,
-                "post_meal_glucose": post_meal_reading.value,
+                "pre_meal_glucose": pre_glucose_value,
+                "post_meal_glucose": post_glucose_value,
                 "meal_timestamp": meal_time.isoformat(),
                 "pre_meal_timestamp": pre_meal_reading._timezone_aware_timestamp.isoformat(),
                 "post_meal_timestamp": post_meal_reading._timezone_aware_timestamp.isoformat()
@@ -1016,7 +1053,8 @@ def meal_impact(
         "group_by": group_by,
         "pre_meal_minutes": pre_meal_minutes,
         "post_meal_minutes": post_meal_minutes,
-        "total_meals_analyzed": total_meals_analyzed
+        "total_meals_analyzed": total_meals_analyzed,
+        "requested_unit": unit
     }
 
     return {
@@ -1033,6 +1071,7 @@ def activity_impact(
     group_by: str = Query("activity_type", description="Group by 'activity_type' or 'intensity'"),
     pre_activity_minutes: int = Query(30, description="Minutes before activity to look for glucose reading"),
     post_activity_minutes: int = Query(120, description="Minutes after activity to look for glucose reading"),
+    unit: str = Query("mg/dL", description="Preferred unit for glucose values: 'mg/dL' or 'mmol/L'"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -1161,7 +1200,17 @@ def activity_impact(
                     post_activity_reading = reading
 
         if pre_activity_reading and post_activity_reading:
-            glucose_change = post_activity_reading.value - pre_activity_reading.value
+            # Convert glucose values to the requested unit if needed
+            pre_glucose_value = pre_activity_reading.value
+            post_glucose_value = post_activity_reading.value
+            
+            # Apply unit conversion if the requested unit is different from mg/dL (default)
+            if unit != "mg/dL":
+                # Convert from mg/dL to the requested unit
+                pre_glucose_value = convert_glucose_value(pre_glucose_value, "mg/dL", unit)
+                post_glucose_value = convert_glucose_value(post_glucose_value, "mg/dL", unit)
+            
+            glucose_change = post_glucose_value - pre_glucose_value
 
             # Determine group based on group_by parameter
             if group_by == "activity_type":
@@ -1185,8 +1234,8 @@ def activity_impact(
             activity_impacts.append({
                 "group": group,
                 "glucose_change": glucose_change,
-                "pre_activity_glucose": pre_activity_reading.value,
-                "post_activity_glucose": post_activity_reading.value,
+                "pre_activity_glucose": pre_glucose_value,
+                "post_activity_glucose": post_glucose_value,
                 "activity_timestamp": activity_time.isoformat(),
                 "pre_activity_timestamp": pre_activity_reading._timezone_aware_timestamp.isoformat(),
                 "post_activity_timestamp": post_activity_reading._timezone_aware_timestamp.isoformat(),
@@ -1246,7 +1295,8 @@ def activity_impact(
         "group_by": group_by,
         "pre_activity_minutes": pre_activity_minutes,
         "post_activity_minutes": post_activity_minutes,
-        "total_activities_analyzed": total_activities_analyzed
+        "total_activities_analyzed": total_activities_analyzed,
+        "requested_unit": unit
     }
 
     return {
@@ -1265,6 +1315,8 @@ def insulin_glucose_correlation(
     group_by: str = Query("dose_range", description="Group by 'dose_range', 'time_of_day', or 'insulin_effectiveness'"),
     pre_insulin_minutes: int = Query(30, description="Minutes before insulin to look for glucose reading"),
     post_insulin_minutes: int = Query(180, description="Minutes after insulin to look for glucose reading"),
+    unit: str = Query("mg/dL", description="Preferred unit for glucose values: 'mg/dL' or 'mmol/L'"),
+    include_partial_data: bool = Query(False, description="Include insulin doses even with missing glucose readings"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -1332,7 +1384,8 @@ def insulin_glucose_correlation(
                 "end_date": end.isoformat() if end else None,
                 "group_by": group_by,
                 "pre_insulin_minutes": pre_insulin_minutes,
-                "post_insulin_minutes": post_insulin_minutes
+                "post_insulin_minutes": post_insulin_minutes,
+                "requested_unit": unit
             }
         }
 
@@ -1374,7 +1427,8 @@ def insulin_glucose_correlation(
                 "end_date": end.isoformat() if end else None,
                 "group_by": group_by,
                 "pre_insulin_minutes": pre_insulin_minutes,
-                "post_insulin_minutes": post_insulin_minutes
+                "post_insulin_minutes": post_insulin_minutes,
+                "requested_unit": unit
             }
         }
 
@@ -1401,7 +1455,17 @@ def insulin_glucose_correlation(
                     post_insulin_reading = reading
 
         if pre_insulin_reading and post_insulin_reading:
-            glucose_change = post_insulin_reading.value - pre_insulin_reading.value
+            # Convert glucose values to the requested unit if needed
+            pre_glucose_value = pre_insulin_reading.value
+            post_glucose_value = post_insulin_reading.value
+            
+            # Apply unit conversion if the requested unit is different from mg/dL (default)
+            if unit != "mg/dL":
+                # Convert from mg/dL to the requested unit
+                pre_glucose_value = convert_glucose_value(pre_glucose_value, "mg/dL", unit)
+                post_glucose_value = convert_glucose_value(post_glucose_value, "mg/dL", unit)
+            
+            glucose_change = post_glucose_value - pre_glucose_value
             insulin_sensitivity = glucose_change / dose.units if dose.units > 0 else 0
 
             # Calculate response time (minutes from dose to post-insulin reading)
@@ -1438,12 +1502,48 @@ def insulin_glucose_correlation(
                 "insulin_units": dose.units,
                 "glucose_change": glucose_change,
                 "insulin_sensitivity": insulin_sensitivity,
-                "pre_insulin_glucose": pre_insulin_reading.value,
-                "post_insulin_glucose": post_insulin_reading.value,
+                "pre_insulin_glucose": pre_glucose_value,
+                "post_insulin_glucose": post_glucose_value,
                 "response_time_minutes": response_time,
                 "dose_timestamp": dose_time.isoformat(),
                 "pre_glucose_timestamp": pre_insulin_reading._timezone_aware_timestamp.isoformat(),
                 "post_glucose_timestamp": post_insulin_reading._timezone_aware_timestamp.isoformat()
+            })
+            total_doses_analyzed += 1
+        elif include_partial_data:
+            # Include insulin doses even with missing glucose readings for partial analysis
+            if group_by == "dose_range":
+                if dose.units <= 2:
+                    group = "0-2_units"
+                elif dose.units <= 5:
+                    group = "2-5_units"
+                else:
+                    group = "5+_units"
+            elif group_by == "time_of_day":
+                hour = dose_time.hour
+                if 6 <= hour < 12:
+                    group = "morning"
+                elif 12 <= hour < 18:
+                    group = "afternoon"
+                elif 18 <= hour < 24:
+                    group = "evening"
+                else:
+                    group = "night"
+            else:  # insulin_effectiveness
+                group = "insufficient_data"
+
+            dose_glucose_pairs.append({
+                "group": group,
+                "insulin_units": dose.units,
+                "glucose_change": None,
+                "insulin_sensitivity": None,
+                "pre_insulin_glucose": None,
+                "post_insulin_glucose": None,
+                "response_time_minutes": None,
+                "dose_timestamp": dose_time.isoformat(),
+                "pre_glucose_timestamp": None,
+                "post_glucose_timestamp": None,
+                "data_completeness": "partial"
             })
             total_doses_analyzed += 1
 
@@ -1461,7 +1561,8 @@ def insulin_glucose_correlation(
                 "end_date": end.isoformat() if end else None,
                 "group_by": group_by,
                 "pre_insulin_minutes": pre_insulin_minutes,
-                "post_insulin_minutes": post_insulin_minutes
+                "post_insulin_minutes": post_insulin_minutes,
+                "requested_unit": unit
             }
         }
 
@@ -1483,18 +1584,18 @@ def insulin_glucose_correlation(
             continue
 
         insulin_units = [pair["insulin_units"] for pair in pairs]
-        glucose_changes = [pair["glucose_change"] for pair in pairs]
-        sensitivities = [pair["insulin_sensitivity"] for pair in pairs]
-        response_times = [pair["response_time_minutes"] for pair in pairs]
+        glucose_changes = [pair["glucose_change"] for pair in pairs if pair["glucose_change"] is not None]
+        sensitivities = [pair["insulin_sensitivity"] for pair in pairs if pair["insulin_sensitivity"] is not None]
+        response_times = [pair["response_time_minutes"] for pair in pairs if pair["response_time_minutes"] is not None]
 
-        # Calculate averages
-        avg_glucose_change = sum(glucose_changes) / len(glucose_changes)
-        avg_insulin_units = sum(insulin_units) / len(insulin_units)
-        avg_sensitivity = sum(sensitivities) / len(sensitivities)
-        avg_response_time = sum(response_times) / len(response_times)
+        # Calculate averages - only for valid data
+        avg_glucose_change = sum(glucose_changes) / len(glucose_changes) if glucose_changes else None
+        avg_insulin_units = sum(insulin_units) / len(insulin_units) if insulin_units else None
+        avg_sensitivity = sum(sensitivities) / len(sensitivities) if sensitivities else None
+        avg_response_time = sum(response_times) / len(response_times) if response_times else None
 
         # Calculate correlation coefficient (simplified Pearson correlation)
-        if len(pairs) > 1:
+        if len(pairs) > 1 and glucose_changes and insulin_units:
             # Calculate correlation between insulin units and glucose change
             mean_units = sum(insulin_units) / len(insulin_units)
             mean_change = sum(glucose_changes) / len(glucose_changes)
@@ -1508,7 +1609,7 @@ def insulin_glucose_correlation(
             else:
                 correlation_coefficient = 0.0
         else:
-            # For single pairs, correlation is not meaningful
+            # For single pairs or missing data, correlation is not meaningful
             correlation_coefficient = None
 
         # Calculate standard deviation
@@ -1521,20 +1622,20 @@ def insulin_glucose_correlation(
 
         # Calculate effectiveness score (0-1, higher is better)
         # Based on glucose drop, consistency, and response time
-        glucose_drop_score = min(abs(avg_glucose_change) / 50.0, 1.0)  # Normalize to 50 mg/dl drop
+        glucose_drop_score = min(abs(avg_glucose_change) / 50.0, 1.0) if avg_glucose_change is not None else 0.0  # Normalize to 50 mg/dl drop
         consistency_score = max(1.0 - (std_dev_change / 30.0), 0.0) if std_dev_change is not None else 0.5  # Lower std dev is better
-        response_time_score = max(1.0 - (avg_response_time - 45) / 60.0, 0.0)  # 45 min is optimal
+        response_time_score = max(1.0 - (avg_response_time - 45) / 60.0, 0.0) if avg_response_time is not None else 0.5  # 45 min is optimal
 
         effectiveness_score = (glucose_drop_score * 0.4 + consistency_score * 0.3 + response_time_score * 0.3)
         effectiveness_score = max(0.0, min(1.0, effectiveness_score))  # Clamp to 0-1
 
         correlations.append({
             "group": group,
-            "avg_glucose_change": round(avg_glucose_change, 2),
-            "avg_insulin_units": round(avg_insulin_units, 2),
-            "insulin_sensitivity": round(avg_sensitivity, 2),
+            "avg_glucose_change": round(avg_glucose_change, 2) if avg_glucose_change is not None else None,
+            "avg_insulin_units": round(avg_insulin_units, 2) if avg_insulin_units is not None else None,
+            "insulin_sensitivity": round(avg_sensitivity, 2) if avg_sensitivity is not None else None,
             "num_doses": len(pairs),
-            "response_time_minutes": round(avg_response_time, 1),
+            "response_time_minutes": round(avg_response_time, 1) if avg_response_time is not None else None,
             "effectiveness_score": round(effectiveness_score, 3),
             "correlation_coefficient": correlation_coefficient,
             "std_dev_change": std_dev_change
@@ -1579,7 +1680,8 @@ def insulin_glucose_correlation(
         "end_date": end.isoformat() if end else None,
         "group_by": group_by,
         "pre_insulin_minutes": pre_insulin_minutes,
-        "post_insulin_minutes": post_insulin_minutes
+        "post_insulin_minutes": post_insulin_minutes,
+        "requested_unit": unit
     }
 
     return {

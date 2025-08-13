@@ -90,13 +90,16 @@ app.add_middleware(
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",  # Alternative dev server
         "http://127.0.0.1:5173",  # Alternative local
+        "http://localhost:4173",  # Vite preview server
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicitly list all methods
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
+    max_age=86400,  # Cache preflight response for 24 hours
 )
 
+# Include all routers
 app.include_router(user_router)
 app.include_router(admin_router)
 app.include_router(predefined_meal_router)
