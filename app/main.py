@@ -85,8 +85,8 @@ app = FastAPI(
 # CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://food-blood-sugar-analyzer-frontend.onrender.com",  # Production frontend
+    allow_origins=[  # Production frontend (legacy)
+        "https://front-end-food-blood-sugar-analyze.onrender.com",  # Current frontend (static site)  # Allow analyzer variant just in case
         "http://localhost:5173",  # Vite dev server
         "http://localhost:3000",  # Alternative dev server
         "http://127.0.0.1:5173",  # Alternative local
