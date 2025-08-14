@@ -332,6 +332,9 @@ def time_in_range(
     Returns percentage of time spent in different glucose ranges for the selected period.
     Useful for pie charts and stacked bar visualizations.
     """
+    # Normalize requested unit (canonical form used for calculations)
+    unit, requested_unit = normalize_unit(unit)
+
     now = datetime.now(UTC)
     if window == "day":
         start = now.date()
@@ -388,7 +391,17 @@ def time_in_range(
             }
         }
 
-    # Count readings in each range
+    # Convert thresholds to the requested/canonical unit if needed
+    # Threshold inputs are defined in mg/dL by default
+    if unit == "mmol/L":
+        very_low_threshold = convert_glucose_value(very_low_threshold, "mg/dL", unit)
+        low_threshold = convert_glucose_value(low_threshold, "mg/dL", unit)
+        target_low = convert_glucose_value(target_low, "mg/dL", unit)
+        target_high = convert_glucose_value(target_high, "mg/dL", unit)
+        high_threshold = convert_glucose_value(high_threshold, "mg/dL", unit)
+        very_high_threshold = convert_glucose_value(very_high_threshold, "mg/dL", unit)
+
+    # Count readings in each range using values normalized to the requested unit
     very_low_count = 0
     low_count = 0
     in_range_count = 0
@@ -397,6 +410,14 @@ def time_in_range(
 
     for reading in valid_readings:
         value = reading.value
+        # Normalize each reading to the requested/canonical unit
+        try:
+            from_unit = getattr(reading, "unit", None) or "mg/dL"
+            value = convert_glucose_value(value, from_unit, unit)
+        except Exception:
+            # If conversion fails, assume stored mg/dL as a safe default
+            if unit != "mg/dL":
+                value = convert_glucose_value(value, "mg/dL", unit)
         if value < very_low_threshold:
             very_low_count += 1
         elif very_low_threshold <= value < low_threshold:
@@ -446,7 +467,7 @@ def time_in_range(
         "target_high": target_high,
         "high_threshold": high_threshold,
         "very_high_threshold": very_high_threshold,
-        "unit": unit,
+        "unit": requested_unit,
         "show_percentage": show_percentage,
         "total_readings": total_readings
     }
